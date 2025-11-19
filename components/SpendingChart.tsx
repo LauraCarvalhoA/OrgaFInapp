@@ -2,6 +2,7 @@
 import React, { useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, TooltipProps } from 'recharts';
 import { Transaction } from '../types';
+import { BarChart2 } from 'lucide-react';
 
 interface SpendingChartProps {
   transactions: Transaction[];
@@ -72,7 +73,6 @@ const SpendingChart: React.FC<SpendingChartProps> = ({ transactions, viewPeriod 
         // YEARLY VIEW: Generate all 12 months
         for (let i = 0; i < 12; i++) {
             const date = new Date(currentYear, i, 1);
-            // Don't show future months if strict, but for "Year View" usually nice to see empty future
             chartData.push({
                 name: date.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', ''),
                 income: 0,
@@ -99,6 +99,19 @@ const SpendingChart: React.FC<SpendingChartProps> = ({ transactions, viewPeriod 
     return chartData;
   }, [transactions, viewPeriod]);
 
+  // Check if we have any data to show
+  const hasData = data.some(d => d.income > 0 || d.expense > 0);
+
+  if (!hasData) {
+      return (
+          <div className="w-full h-[300px] mt-4 flex flex-col items-center justify-center text-slate-500 bg-slate-800/20 rounded-xl border border-slate-700 border-dashed">
+              <BarChart2 size={32} className="mb-2 opacity-50" />
+              <p className="text-sm font-medium">Sem dados para este período</p>
+              <p className="text-xs opacity-70">Lance suas receitas e despesas para ver o gráfico.</p>
+          </div>
+      );
+  }
+
   return (
     <div className="w-full h-[300px] mt-4">
       <ResponsiveContainer width="100%" height="100%">
@@ -120,7 +133,7 @@ const SpendingChart: React.FC<SpendingChartProps> = ({ transactions, viewPeriod 
             tickLine={false} 
             tick={{ fill: '#94a3b8', fontSize: 11 }} 
             dy={10}
-            interval={viewPeriod === 'monthly' ? 2 : 0} // Skip labels in dense monthly view
+            interval={viewPeriod === 'monthly' ? 4 : 0}
           />
           <YAxis 
             axisLine={false} 

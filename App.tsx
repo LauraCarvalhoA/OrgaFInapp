@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 
 import { Account, Transaction, AccountType, Budget, Investment, UserProfile, AccountOwner, Goal, PartnerConfig, EducationModule } from './types';
-import { INITIAL_ACCOUNTS, INITIAL_TRANSACTIONS, INITIAL_BUDGETS, INITIAL_INVESTMENTS, generateRandomTransactions, MONTHLY_CDI_RATE, INITIAL_GOALS, MOCK_EDUCATION_MODULES } from './constants';
+import { MONTHLY_CDI_RATE, INITIAL_GOALS, MOCK_EDUCATION_MODULES } from './constants';
 import StatCard from './components/StatCard';
 import SpendingChart from './components/SpendingChart';
 import ConnectAccountModal from './components/ConnectAccountModal';
@@ -45,13 +45,13 @@ import PartnerConnectModal from './components/PartnerConnectModal';
 import { generateMonthlyInsight } from './services/geminiService';
 
 const App = () => {
-  // Global State
+  // Global State - Start EMPTY for manual tracking
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [accounts, setAccounts] = useState<Account[]>(INITIAL_ACCOUNTS);
-  const [transactions, setTransactions] = useState<Transaction[]>(INITIAL_TRANSACTIONS);
-  const [budgets, setBudgets] = useState<Budget[]>(INITIAL_BUDGETS);
-  const [investments, setInvestments] = useState<Investment[]>(INITIAL_INVESTMENTS);
-  const [goals, setGoals] = useState<Goal[]>(INITIAL_GOALS);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [investments, setInvestments] = useState<Investment[]>([]);
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [educationModules, setEducationModules] = useState<EducationModule[]>(MOCK_EDUCATION_MODULES);
   
   const [activeTab, setActiveTab] = useState<'dashboard' | 'investments' | 'advisor' | 'budgets' | 'goals' | 'education'>('dashboard');
@@ -65,7 +65,7 @@ const App = () => {
   const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
   const [isAddInvestmentOpen, setIsAddInvestmentOpen] = useState(false);
   const [isPartnerModalOpen, setIsPartnerModalOpen] = useState(false);
-  const [dailyInsight, setDailyInsight] = useState<string>('Carregando insights...');
+  const [dailyInsight, setDailyInsight] = useState<string>('Acompanhe seus gastos para gerar insights.');
 
   // Filter Data based on View Mode
   const filteredAccounts = accounts.filter(a => viewMode === 'joint' || a.owner === viewMode || a.owner === 'joint');
@@ -132,36 +132,34 @@ const App = () => {
       .reduce((sum, t) => sum + Math.abs(t.amount), 0);
   };
 
-  // Load AI Insight on Mount
+  // Load AI Insight on Mount (only if user has data)
   useEffect(() => {
     const fetchInsight = async () => {
-      if (process.env.API_KEY) {
+      if (process.env.API_KEY && transactions.length > 0) {
         const insight = await generateMonthlyInsight(filteredAccounts, filteredTransactions, userProfile || undefined);
         setDailyInsight(insight);
-      } else {
-        setDailyInsight("AI services require an API Key.");
       }
     };
-    if (userProfile) {
+    if (userProfile && transactions.length > 0) {
         fetchInsight();
     }
-  }, [accounts, userProfile, viewMode]);
+  }, [transactions.length, userProfile, viewMode]);
 
   // Handlers
-  const handleConnectAccount = (institution: string) => {
+  const handleConnectAccount = (institution: string, initialBalance: number, type: AccountType, name: string) => {
     const newAccount: Account = {
       id: `acc_${Date.now()}`,
-      name: `Conta ${institution}`,
-      type: AccountType.CHECKING,
-      balance: Math.floor(Math.random() * 5000) + 500,
+      name: name || institution,
+      type: type,
+      balance: initialBalance,
       institution: institution,
       lastUpdated: new Date().toISOString(),
-      color: 'bg-slate-500',
-      owner: 'me'
+      color: 'bg-slate-600',
+      owner: 'me',
+      creditLimit: type === AccountType.CREDIT ? 5000 : undefined // Default limit placeholder
     };
-    const newTransactions = generateRandomTransactions(newAccount.id, 30);
-    setAccounts([...accounts, newAccount]);
-    setTransactions(prev => [...newTransactions, ...prev].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+    // Do NOT generate random transactions. Manual only.
+    setAccounts(prev => [...prev, newAccount]);
     setIsConnectModalOpen(false);
   };
 
@@ -185,7 +183,7 @@ const App = () => {
       const payingAccount = accounts.find(a => a.type === AccountType.CHECKING && a.isDefault) || accounts.find(a => a.type === AccountType.CHECKING);
       
       if (!payingAccount) {
-          alert("Nenhuma conta corrente encontrada para pagar a fatura.");
+          alert("Você precisa ter uma conta corrente cadastrada para pagar a fatura.");
           return;
       }
 
@@ -202,8 +200,10 @@ const App = () => {
       };
 
       setTransactions(prev => [paymentTxn, ...prev]);
+      
+      // Update both balances
       setAccounts(prev => prev.map(a => {
-          if (a.id === accountId) return { ...a, balance: 0, lastUpdated: new Date().toISOString() }; // Reset CC
+          if (a.id === accountId) return { ...a, balance: 0, lastUpdated: new Date().toISOString() }; // Reset CC debt
           if (a.id === payingAccount.id) return { ...a, balance: a.balance - amountToPay }; // Deduct from Checking
           return a;
       }));
@@ -222,7 +222,7 @@ const App = () => {
             toAccountId: data.toAccountId,
             date: data.date,
             amount: -data.amount,
-            merchant: 'Transferência entre contas',
+            merchant: 'Transferência',
             category: 'Transferência',
             status: 'completed',
             owner: data.owner
@@ -231,12 +231,16 @@ const App = () => {
         return;
     }
 
-    // Normal Transaction Logic (Expense/Income) with Installments
+    // Normal Transaction Logic (Expense/Income)
     const newTxns: Transaction[] = [];
     const baseDate = new Date(data.date);
     const totalInstallments = data.installments || 1;
     const installmentAmount = data.amount / totalInstallments;
 
+    // For balances, we update immediately for current expense
+    // Logic choice: If it's credit, we increase debt (balance goes negative)
+    // If it's debit/cash, we decrease balance
+    
     for (let i = 0; i < totalInstallments; i++) {
         const txnDate = new Date(baseDate);
         txnDate.setMonth(baseDate.getMonth() + i);
@@ -257,8 +261,12 @@ const App = () => {
 
     setTransactions(prev => [...newTxns, ...prev].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
     
+    // Update Balance Logic
     setAccounts(prevAccounts => prevAccounts.map(acc => {
       if (acc.id === data.accountId) {
+        // If credit card, expenses make balance more negative
+        // If checking, expenses reduce balance
+        // Our 'data.amount' is already signed (negative for expense, positive for income)
         return { ...acc, balance: acc.balance + data.amount };
       }
       return acc;
@@ -296,18 +304,6 @@ const App = () => {
               recommendedFor: 'RETIREMENT'
           };
           setEducationModules(prev => [newModule, ...prev]);
-      } else if (newGoal.type === 'PURCHASE') {
-           const newModule: EducationModule = {
-              id: `edu_buy_${Date.now()}`,
-              level: 'ALL',
-              title: 'Planejamento de Grandes Compras',
-              description: 'Comparando: Pagar à vista com desconto vs. Financiar e investir.',
-              readTime: '8 min',
-              isLocked: false,
-              completed: false,
-              recommendedFor: 'PURCHASE'
-          };
-          setEducationModules(prev => [newModule, ...prev]);
       }
   };
 
@@ -337,7 +333,7 @@ const App = () => {
 
             <nav className="flex-1 px-4 space-y-1 mt-4">
             <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'dashboard' ? 'bg-slate-800 text-white shadow-inner' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}`}>
-                <LayoutDashboard size={18} /> Dashboard
+                <LayoutDashboard size={18} /> Visão Geral
             </button>
             <button onClick={() => setActiveTab('goals')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'goals' ? 'bg-slate-800 text-white shadow-inner' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}`}>
                 <Target size={18} /> Objetivos
@@ -362,10 +358,10 @@ const App = () => {
 
             <div className="p-4 mb-safe-bottom">
             <button onClick={() => setIsAddTransactionOpen(true)} className="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-all text-sm font-medium mb-2">
-                <PlusCircle size={16} /> Lançar Manual
+                <PlusCircle size={16} /> Lançar
             </button>
             <button onClick={() => setIsConnectModalOpen(true)} className="w-full bg-gradient-to-r from-primary to-indigo-600 hover:from-indigo-500 hover:to-indigo-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-indigo-900/20 transition-all text-sm font-medium">
-                <Plus size={16} /> Nova Conta
+                <Plus size={16} /> Conta
             </button>
             </div>
         </aside>
@@ -393,11 +389,13 @@ const App = () => {
                     </h1>
                     
                     {/* Couple Toggle */}
-                    <div className="hidden md:flex bg-slate-800 rounded-lg p-1 ml-4">
-                        <button onClick={() => setViewMode('me')} className={`px-3 py-1 rounded text-xs font-medium transition-all ${viewMode === 'me' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'}`}>Eu</button>
-                        <button onClick={() => setViewMode('joint')} className={`px-3 py-1 rounded text-xs font-medium transition-all ${viewMode === 'joint' ? 'bg-primary text-white' : 'text-slate-400 hover:text-white'}`}>Casal</button>
-                        <button onClick={() => setViewMode('partner')} className={`px-3 py-1 rounded text-xs font-medium transition-all ${viewMode === 'partner' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>Parceiro</button>
-                    </div>
+                    {accounts.length > 0 && (
+                        <div className="hidden md:flex bg-slate-800 rounded-lg p-1 ml-4">
+                            <button onClick={() => setViewMode('me')} className={`px-3 py-1 rounded text-xs font-medium transition-all ${viewMode === 'me' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'}`}>Eu</button>
+                            <button onClick={() => setViewMode('joint')} className={`px-3 py-1 rounded text-xs font-medium transition-all ${viewMode === 'joint' ? 'bg-primary text-white' : 'text-slate-400 hover:text-white'}`}>Casal</button>
+                            <button onClick={() => setViewMode('partner')} className={`px-3 py-1 rounded text-xs font-medium transition-all ${viewMode === 'partner' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>Parceiro</button>
+                        </div>
+                    )}
                 </div>
                 <p className="text-slate-400 text-xs md:text-sm truncate max-w-[300px] md:max-w-none">
                     {activeTab === 'dashboard' && dailyInsight}
@@ -407,7 +405,7 @@ const App = () => {
                 </div>
                 <div className="text-right">
                     <div className="hidden md:flex items-center justify-end gap-2 mb-1">
-                        {!userProfile?.partnerConfig?.isConnected && (
+                        {!userProfile?.partnerConfig?.isConnected && accounts.length > 0 && (
                             <button 
                                 onClick={() => setIsPartnerModalOpen(true)}
                                 className="text-xs font-bold text-blue-400 hover:text-blue-300 flex items-center gap-1 border border-blue-500/30 rounded px-2 py-0.5 bg-blue-500/10"
@@ -421,232 +419,253 @@ const App = () => {
                 </div>
             </header>
 
-            {/* Mobile Only Controls */}
-            <div className="md:hidden flex gap-2 mb-6 overflow-x-auto pb-2">
-                <button onClick={() => setViewMode('me')} className={`px-4 py-2 rounded-full text-xs font-bold border whitespace-nowrap ${viewMode === 'me' ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>Minha Visão</button>
-                <button onClick={() => setViewMode('joint')} className={`px-4 py-2 rounded-full text-xs font-bold border whitespace-nowrap ${viewMode === 'joint' ? 'bg-primary border-primary text-white' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>Visão Casal</button>
-                 <button onClick={() => setIsAddTransactionOpen(true)} className="px-4 py-2 rounded-full text-xs font-bold bg-slate-800 border border-slate-700 text-white flex items-center gap-1 whitespace-nowrap"><PlusCircle size={12}/> Lançar</button>
-            </div>
-
-            {activeTab === 'dashboard' && (
-                <div className="space-y-6">
-                
-                {/* Dashboard Period Toggle (Month vs Year) */}
-                <div className="flex items-center justify-between">
-                    <div className="flex bg-slate-800 rounded-xl p-1 border border-slate-700">
-                        <button 
-                            onClick={() => setDashboardPeriod('monthly')}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-all ${dashboardPeriod === 'monthly' ? 'bg-slate-700 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-                        >
-                            <Calendar size={14} /> Mês
-                        </button>
-                        <button 
-                            onClick={() => setDashboardPeriod('yearly')}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-all ${dashboardPeriod === 'yearly' ? 'bg-slate-700 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-                        >
-                            <TrendingUp size={14} /> Ano
-                        </button>
+            {/* Empty State / Zero State Handling */}
+            {activeTab === 'dashboard' && accounts.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-[50vh] text-center space-y-6 animate-fade-in">
+                    <div className="w-20 h-20 bg-slate-800 rounded-full flex items-center justify-center mb-2 shadow-xl border border-slate-700">
+                        <Wallet size={40} className="text-emerald-500" />
                     </div>
-                </div>
-
-                {/* Stats Grid - Dynamic based on Period */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-                    <StatCard 
-                        title={dashboardPeriod === 'monthly' ? 'Ganho' : 'Ganho (YTD)'} 
-                        amount={periodIncome} 
-                        icon={<Wallet size={18} />} 
-                        type="positive" 
-                    />
-                    <StatCard 
-                        title={dashboardPeriod === 'monthly' ? 'Gasto' : 'Gasto (YTD)'} 
-                        amount={periodExpense} 
-                        icon={<ArrowDownRight size={18} />} 
-                        type="negative" 
-                    />
-                    <StatCard 
-                        title={'Aportado'} 
-                        amount={periodInvested} 
-                        icon={<TrendingUp size={18} />} 
-                        type="positive" 
-                    />
-                    <div className="bg-card border border-slate-700 p-4 md:p-6 rounded-2xl shadow-sm">
-                        <div className="flex justify-between items-start mb-4">
-                            <div>
-                            <p className="text-slate-400 text-xs md:text-sm font-medium">Rentabilidade</p>
-                            <h3 className={`text-lg md:text-2xl font-bold mt-1 ${yieldPercentage >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                {yieldPercentage >= 0 ? '+' : ''}{yieldPercentage.toFixed(2)}%
-                            </h3>
-                            </div>
-                            <div className="p-2 md:p-3 bg-slate-700/50 rounded-xl text-primary">
-                                <Percent size={18} />
-                            </div>
-                        </div>
+                    <div>
+                        <h2 className="text-2xl font-bold text-white mb-2">Vamos começar?</h2>
+                        <p className="text-slate-400 max-w-md mx-auto">Adicione sua primeira conta bancária, cartão ou carteira para começar a controlar suas finanças manualmente.</p>
                     </div>
-                </div>
-
-                {/* Charts & Fixed Expenses */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div className="lg:col-span-2 space-y-6">
-                        {/* Chart */}
-                        <div className="bg-card border border-slate-700 p-4 md:p-6 rounded-2xl shadow-sm">
-                            <div className="flex justify-between items-center mb-2">
-                                <h3 className="text-base md:text-lg font-semibold text-white">
-                                    {dashboardPeriod === 'monthly' ? 'Fluxo Diário' : 'Evolução Mensal'}
-                                </h3>
-                            </div>
-                            <SpendingChart transactions={filteredTransactions} viewPeriod={dashboardPeriod} />
-                        </div>
-                        
-                        {/* Accounts Area */}
-                        <div>
-                            <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-base md:text-lg font-semibold text-white">Minhas Contas</h3>
-                            <button onClick={() => setIsConnectModalOpen(true)} className="text-sm text-primary hover:text-primary/80 font-medium">+ Add</button>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {filteredAccounts.map(account => (
-                                <AccountCard 
-                                    key={account.id} 
-                                    account={account} 
-                                    onUpdateBalance={handleUpdateBalance} 
-                                    onPayBill={handlePayBill}
-                                />
-                            ))}
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Sidebar: Recent Txns & Fixed Expenses */}
-                    <div className="space-y-6">
-                        {/* Fixed Expenses (Only meaningful in Monthly view typically, but good to show always) */}
-                        <FixedExpensesList transactions={filteredTransactions} />
-                        
-                        {/* Recent Txns */}
-                        <div className="bg-card border border-slate-700 p-4 md:p-6 rounded-2xl shadow-sm pb-20 md:pb-6">
-                        <h3 className="text-lg font-semibold text-white mb-4">Últimas</h3>
-                        <div className="space-y-2">
-                            {filteredTransactions.slice(0, 6).map(t => (
-                                <div key={t.id} className="flex items-center justify-between p-3 bg-slate-800/30 rounded-xl">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${t.amount > 0 ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}>
-                                            {t.amount > 0 ? <ArrowDownRight size={14} /> : <ArrowUpRight size={14} />}
-                                        </div>
-                                        <div>
-                                            <p className="text-sm font-medium text-white truncate max-w-[100px]">{t.merchant}</p>
-                                            <p className="text-[10px] text-slate-500">{t.category}</p>
-                                        </div>
-                                    </div>
-                                    <span className={`text-sm font-bold ${t.amount > 0 ? 'text-emerald-400' : 'text-white'}`}>
-                                        {t.amount > 0 ? '+' : ''}{formatBRL(t.amount)}
-                                    </span>
-                                </div>
-                            ))}
-                        </div>
-                        </div>
-                    </div>
-                </div>
-                </div>
-            )}
-
-            {activeTab === 'budgets' && (
-                <div className="space-y-6 pb-20 md:pb-0">
-                <div className="flex justify-between items-center">
-                    <h3 className="text-xl font-semibold text-white">Orçamentos</h3>
-                    <button onClick={() => setIsAddBudgetOpen(true)} className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                    <Plus size={16} /> Novo
+                    <button 
+                        onClick={() => setIsConnectModalOpen(true)}
+                        className="bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white px-8 py-4 rounded-2xl font-bold shadow-lg shadow-emerald-900/20 transition-all transform hover:scale-105 flex items-center gap-3"
+                    >
+                        <PlusCircle size={24} /> Adicionar Primeira Conta
                     </button>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {budgets.map(budget => (
-                    <BudgetCard key={budget.id} category={budget.category} limit={budget.limit} spent={getCategorySpending(budget.category)} onDelete={() => handleDeleteBudget(budget.id)} />
-                    ))}
-                </div>
-                </div>
-            )}
-
-            {activeTab === 'goals' && userProfile && (
-                <div className="pb-20 md:pb-0">
-                    <GoalsTab goals={goals} userProfile={userProfile} investments={investments} onAddGoal={handleAddGoal} />
-                </div>
-            )}
-
-            {activeTab === 'education' && userProfile && (
-                 <div className="pb-20 md:pb-0">
-                    <EducationTab userProfile={userProfile} investments={investments} modules={educationModules} />
-                </div>
-            )}
-
-            {activeTab === 'advisor' && (
-                <div className="pb-20 md:pb-0">
-                    <FinancialAdvisor accounts={filteredAccounts} transactions={filteredTransactions} />
-                </div>
-            )}
-
-            {activeTab === 'investments' && (
-                <div className="space-y-6 pb-20 md:pb-0">
-                {/* Investment Portfolio Summary */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 p-6 rounded-2xl">
-                        <p className="text-slate-400 text-sm font-medium mb-1">Total Investido</p>
-                        <h3 className="text-3xl font-bold text-white">{formatBRL(investmentBalance)}</h3>
-                    </div>
-                    <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 p-6 rounded-2xl">
-                        <p className="text-slate-400 text-sm font-medium mb-1">Rentabilidade Geral</p>
-                        <div className="flex items-end gap-2">
-                            <h3 className={`text-3xl font-bold ${yieldPercentage >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                {yieldPercentage >= 0 ? '+' : ''}{yieldPercentage.toFixed(2)}%
-                            </h3>
+            ) : (
+                /* Standard Dashboard Content */
+                <>
+                {activeTab === 'dashboard' && (
+                    <div className="space-y-6">
+                    
+                    {/* Stats Grid */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+                        <StatCard 
+                            title={dashboardPeriod === 'monthly' ? 'Receitas' : 'Receitas (Ano)'} 
+                            amount={periodIncome} 
+                            icon={<Wallet size={18} />} 
+                            type="positive" 
+                        />
+                        <StatCard 
+                            title={dashboardPeriod === 'monthly' ? 'Despesas' : 'Despesas (Ano)'} 
+                            amount={periodExpense} 
+                            icon={<ArrowDownRight size={18} />} 
+                            type="negative" 
+                        />
+                        <StatCard 
+                            title={'Investido (Mês)'} 
+                            amount={periodInvested} 
+                            icon={<TrendingUp size={18} />} 
+                            type="positive" 
+                        />
+                        <div className="bg-card border border-slate-700 p-4 md:p-6 rounded-2xl shadow-sm">
+                            <div className="flex justify-between items-start mb-4">
+                                <div>
+                                <p className="text-slate-400 text-xs md:text-sm font-medium">Rentabilidade</p>
+                                <h3 className={`text-lg md:text-2xl font-bold mt-1 ${yieldPercentage >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                    {yieldPercentage >= 0 ? '+' : ''}{yieldPercentage.toFixed(2)}%
+                                </h3>
+                                </div>
+                                <div className="p-2 md:p-3 bg-slate-700/50 rounded-xl text-primary">
+                                    <Percent size={18} />
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    <div className="bg-gradient-to-br from-primary/10 to-slate-900 border border-primary/20 p-6 rounded-2xl flex flex-col justify-center items-start">
-                        <button onClick={() => setIsAddInvestmentOpen(true)} className="w-full bg-primary hover:bg-primary/90 text-white py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg transition-all text-sm font-medium">
-                        <Plus size={18} /> Novo Aporte
+
+                    {/* Charts & Fixed Expenses */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div className="lg:col-span-2 space-y-6">
+                            {/* Chart */}
+                            <div className="bg-card border border-slate-700 p-4 md:p-6 rounded-2xl shadow-sm">
+                                <div className="flex justify-between items-center mb-2">
+                                    <h3 className="text-base md:text-lg font-semibold text-white">
+                                        {dashboardPeriod === 'monthly' ? 'Fluxo Diário' : 'Evolução Mensal'}
+                                    </h3>
+                                     <div className="flex bg-slate-800 rounded-lg p-1 border border-slate-700">
+                                        <button 
+                                            onClick={() => setDashboardPeriod('monthly')}
+                                            className={`px-3 py-1 rounded text-xs font-medium transition-all ${dashboardPeriod === 'monthly' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}
+                                        >
+                                            Mês
+                                        </button>
+                                        <button 
+                                            onClick={() => setDashboardPeriod('yearly')}
+                                            className={`px-3 py-1 rounded text-xs font-medium transition-all ${dashboardPeriod === 'yearly' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}
+                                        >
+                                            Ano
+                                        </button>
+                                    </div>
+                                </div>
+                                <SpendingChart transactions={filteredTransactions} viewPeriod={dashboardPeriod} />
+                            </div>
+                            
+                            {/* Accounts Area */}
+                            <div>
+                                <div className="flex justify-between items-center mb-4">
+                                <h3 className="text-base md:text-lg font-semibold text-white">Minhas Contas</h3>
+                                <button onClick={() => setIsConnectModalOpen(true)} className="text-sm text-primary hover:text-primary/80 font-medium">+ Add</button>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {filteredAccounts.map(account => (
+                                    <AccountCard 
+                                        key={account.id} 
+                                        account={account} 
+                                        onUpdateBalance={handleUpdateBalance} 
+                                        onPayBill={handlePayBill}
+                                    />
+                                ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Sidebar: Recent Txns & Fixed Expenses */}
+                        <div className="space-y-6">
+                            {/* Fixed Expenses */}
+                            <FixedExpensesList transactions={filteredTransactions} />
+                            
+                            {/* Recent Txns */}
+                            <div className="bg-card border border-slate-700 p-4 md:p-6 rounded-2xl shadow-sm pb-20 md:pb-6">
+                            <h3 className="text-lg font-semibold text-white mb-4">Últimas</h3>
+                            {filteredTransactions.length === 0 ? (
+                                <p className="text-sm text-slate-500 text-center py-4">Nenhuma movimentação recente.</p>
+                            ) : (
+                                <div className="space-y-2">
+                                    {filteredTransactions.slice(0, 6).map(t => (
+                                        <div key={t.id} className="flex items-center justify-between p-3 bg-slate-800/30 rounded-xl">
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${t.amount > 0 ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}>
+                                                    {t.amount > 0 ? <ArrowDownRight size={14} /> : <ArrowUpRight size={14} />}
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm font-medium text-white truncate max-w-[100px]">{t.merchant}</p>
+                                                    <p className="text-[10px] text-slate-500">{t.category}</p>
+                                                </div>
+                                            </div>
+                                            <span className={`text-sm font-bold ${t.amount > 0 ? 'text-emerald-400' : 'text-white'}`}>
+                                                {t.amount > 0 ? '+' : ''}{formatBRL(t.amount)}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            </div>
+                        </div>
+                    </div>
+                    </div>
+                )}
+
+                {activeTab === 'budgets' && (
+                    <div className="space-y-6 pb-20 md:pb-0">
+                    <div className="flex justify-between items-center">
+                        <h3 className="text-xl font-semibold text-white">Orçamentos</h3>
+                        <button onClick={() => setIsAddBudgetOpen(true)} className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                        <Plus size={16} /> Novo
                         </button>
                     </div>
-                </div>
-                
-                {/* List of Assets */}
-                <div>
-                    <h3 className="text-lg font-semibold text-white mb-4">Minha Carteira</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {investments.map(inv => (<InvestmentCard key={inv.id} investment={inv} />))}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {budgets.length > 0 ? budgets.map(budget => (
+                        <BudgetCard key={budget.id} category={budget.category} limit={budget.limit} spent={getCategorySpending(budget.category)} onDelete={() => handleDeleteBudget(budget.id)} />
+                        )) : (
+                            <p className="text-slate-500 text-sm col-span-full text-center py-10 bg-slate-800/30 rounded-xl border border-dashed border-slate-700">Nenhum orçamento definido.</p>
+                        )}
                     </div>
-                </div>
-                </div>
+                    </div>
+                )}
+
+                {activeTab === 'goals' && userProfile && (
+                    <div className="pb-20 md:pb-0">
+                        <GoalsTab goals={goals} userProfile={userProfile} investments={investments} onAddGoal={handleAddGoal} />
+                    </div>
+                )}
+
+                {activeTab === 'education' && userProfile && (
+                    <div className="pb-20 md:pb-0">
+                        <EducationTab userProfile={userProfile} investments={investments} modules={educationModules} />
+                    </div>
+                )}
+
+                {activeTab === 'advisor' && (
+                    <div className="pb-20 md:pb-0">
+                        <FinancialAdvisor accounts={filteredAccounts} transactions={filteredTransactions} />
+                    </div>
+                )}
+
+                {activeTab === 'investments' && (
+                    <div className="space-y-6 pb-20 md:pb-0">
+                    {/* Investment Portfolio Summary */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 p-6 rounded-2xl">
+                            <p className="text-slate-400 text-sm font-medium mb-1">Total Investido</p>
+                            <h3 className="text-3xl font-bold text-white">{formatBRL(investmentBalance)}</h3>
+                        </div>
+                        <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 p-6 rounded-2xl">
+                            <p className="text-slate-400 text-sm font-medium mb-1">Rentabilidade Geral</p>
+                            <div className="flex items-end gap-2">
+                                <h3 className={`text-3xl font-bold ${yieldPercentage >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                    {yieldPercentage >= 0 ? '+' : ''}{yieldPercentage.toFixed(2)}%
+                                </h3>
+                            </div>
+                        </div>
+                        <div className="bg-gradient-to-br from-primary/10 to-slate-900 border border-primary/20 p-6 rounded-2xl flex flex-col justify-center items-start">
+                            <button onClick={() => setIsAddInvestmentOpen(true)} className="w-full bg-primary hover:bg-primary/90 text-white py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg transition-all text-sm font-medium">
+                            <Plus size={18} /> Novo Aporte
+                            </button>
+                        </div>
+                    </div>
+                    
+                    {/* List of Assets */}
+                    <div>
+                        <h3 className="text-lg font-semibold text-white mb-4">Minha Carteira</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {investments.length > 0 ? investments.map(inv => (<InvestmentCard key={inv.id} investment={inv} />)) : (
+                                <p className="text-slate-500 text-sm col-span-full text-center py-10 bg-slate-800/30 rounded-xl border border-dashed border-slate-700">Nenhum investimento cadastrado.</p>
+                            )}
+                        </div>
+                    </div>
+                    </div>
+                )}
+                </>
             )}
             </div>
         </main>
       </div>
 
       {/* Mobile Bottom Navigation */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-lg border-t border-slate-800 pb-safe-bottom z-40">
-         <div className="flex justify-around items-center p-3">
-             <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center gap-1 ${activeTab === 'dashboard' ? 'text-primary' : 'text-slate-500'}`}>
-                 <LayoutDashboard size={20} />
-                 <span className="text-[10px] font-medium">Início</span>
-             </button>
-             <button onClick={() => setActiveTab('goals')} className={`flex flex-col items-center gap-1 ${activeTab === 'goals' ? 'text-primary' : 'text-slate-500'}`}>
-                 <Target size={20} />
-                 <span className="text-[10px] font-medium">Metas</span>
-             </button>
-             <div className="relative -top-6">
-                 <button 
-                   onClick={() => setIsAddTransactionOpen(true)}
-                   className="w-14 h-14 rounded-full bg-primary text-white flex items-center justify-center shadow-lg shadow-primary/30 border-4 border-slate-900"
-                 >
-                     <Plus size={28} />
-                 </button>
-             </div>
-             <button onClick={() => setActiveTab('investments')} className={`flex flex-col items-center gap-1 ${activeTab === 'investments' ? 'text-primary' : 'text-slate-500'}`}>
-                 <TrendingUp size={20} />
-                 <span className="text-[10px] font-medium">Investir</span>
-             </button>
-             <button onClick={() => setActiveTab('advisor')} className={`flex flex-col items-center gap-1 ${activeTab === 'advisor' ? 'text-primary' : 'text-slate-500'}`}>
-                 <Landmark size={20} />
-                 <span className="text-[10px] font-medium">AI</span>
-             </button>
-         </div>
-      </div>
+      {userProfile && accounts.length > 0 && (
+          <div className="md:hidden fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-lg border-t border-slate-800 pb-safe-bottom z-40">
+            <div className="flex justify-around items-center p-3">
+                <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center gap-1 ${activeTab === 'dashboard' ? 'text-primary' : 'text-slate-500'}`}>
+                    <LayoutDashboard size={20} />
+                    <span className="text-[10px] font-medium">Início</span>
+                </button>
+                <button onClick={() => setActiveTab('goals')} className={`flex flex-col items-center gap-1 ${activeTab === 'goals' ? 'text-primary' : 'text-slate-500'}`}>
+                    <Target size={20} />
+                    <span className="text-[10px] font-medium">Metas</span>
+                </button>
+                <div className="relative -top-6">
+                    <button 
+                    onClick={() => setIsAddTransactionOpen(true)}
+                    className="w-14 h-14 rounded-full bg-primary text-white flex items-center justify-center shadow-lg shadow-primary/30 border-4 border-slate-900"
+                    >
+                        <Plus size={28} />
+                    </button>
+                </div>
+                <button onClick={() => setActiveTab('investments')} className={`flex flex-col items-center gap-1 ${activeTab === 'investments' ? 'text-primary' : 'text-slate-500'}`}>
+                    <TrendingUp size={20} />
+                    <span className="text-[10px] font-medium">Investir</span>
+                </button>
+                <button onClick={() => setActiveTab('advisor')} className={`flex flex-col items-center gap-1 ${activeTab === 'advisor' ? 'text-primary' : 'text-slate-500'}`}>
+                    <Landmark size={20} />
+                    <span className="text-[10px] font-medium">AI</span>
+                </button>
+            </div>
+        </div>
+      )}
 
       {/* Modals */}
       <ConnectAccountModal isOpen={isConnectModalOpen} onClose={() => setIsConnectModalOpen(false)} onConnect={handleConnectAccount} />
