@@ -42,6 +42,7 @@ import FixedExpensesList from './components/FixedExpensesList';
 import GoalsTab from './components/GoalsTab';
 import EducationTab from './components/EducationTab';
 import PartnerConnectModal from './components/PartnerConnectModal';
+import InvestmentActionModal from './components/InvestmentActionModal';
 import { generateMonthlyInsight } from './services/geminiService';
 
 const App = () => {
@@ -66,6 +67,10 @@ const App = () => {
   const [isAddInvestmentOpen, setIsAddInvestmentOpen] = useState(false);
   const [isPartnerModalOpen, setIsPartnerModalOpen] = useState(false);
   const [dailyInsight, setDailyInsight] = useState<string>('Acompanhe seus gastos para gerar insights.');
+  
+  // Investment Actions State
+  const [investmentAction, setInvestmentAction] = useState<{type: 'CONTRIBUTE' | 'REDEEM', investment: Investment} | null>(null);
+
 
   // Filter Data based on View Mode
   const filteredAccounts = accounts.filter(a => viewMode === 'joint' || a.owner === viewMode || a.owner === 'joint');
@@ -96,7 +101,7 @@ const App = () => {
   });
 
   const periodIncome = statsTransactions
-    .filter(t => t.amount > 0 && t.category !== 'Investimentos') 
+    .filter(t => t.amount > 0 && t.category !== 'Investimentos' && t.category !== 'Resgate de Investimento') 
     .reduce((sum, t) => sum + t.amount, 0);
   
   const periodExpense = statsTransactions
@@ -290,20 +295,90 @@ const App = () => {
 
   const handleAddGoal = (newGoal: Goal) => {
       setGoals([...goals, newGoal]);
-      
-      // Dynamic Education Logic based on goal type
-      if (newGoal.type === 'RETIREMENT') {
-          const newModule: EducationModule = {
-              id: `edu_ret_${Date.now()}`,
-              level: 'ALL',
-              title: 'Guia Definitivo da Aposentadoria',
-              description: 'Como calcular sua independência financeira, inflação e melhores ativos de longo prazo.',
-              readTime: '12 min',
-              isLocked: false,
-              completed: false,
-              recommendedFor: 'RETIREMENT'
-          };
-          setEducationModules(prev => [newModule, ...prev]);
+  };
+
+  const handleInvestmentActionConfirm = (data: any) => {
+      const { investmentId, type, amount, accountId, date, quantity, price } = data;
+
+      if (type === 'CONTRIBUTE') {
+          // 1. Create Transaction (Expense) from Source Account (if selected)
+          if (accountId) {
+             const txn: Transaction = {
+                id: `txn_inv_${Date.now()}`,
+                accountId: accountId,
+                date: date,
+                amount: -amount, // Negative because money leaves account
+                merchant: 'Aporte Investimento',
+                category: 'Investimentos',
+                status: 'completed',
+                owner: 'me'
+             };
+             setTransactions(prev => [txn, ...prev]);
+             setAccounts(prev => prev.map(a => a.id === accountId ? {...a, balance: a.balance - amount} : a));
+          }
+
+          // 2. Update Investment Data
+          setInvestments(prev => prev.map(inv => {
+              if (inv.id === investmentId) {
+                  let updatedInv = { ...inv };
+                  
+                  if (inv.type === 'FII' && quantity && price) {
+                      // Weighted Average Price Calculation
+                      const totalOld = inv.amountInvested;
+                      const totalNew = quantity * price;
+                      const totalQty = (inv.quantity || 0) + quantity;
+                      
+                      updatedInv.quantity = totalQty;
+                      updatedInv.averagePrice = (totalOld + totalNew) / totalQty;
+                      updatedInv.amountInvested = totalOld + totalNew;
+                      // For currentValue, we assume market price is roughly the price paid or existing market price
+                      // Simplification: just add the value
+                      updatedInv.currentValue = inv.currentValue + (quantity * price); 
+                  } else {
+                      // Fixed Income
+                      updatedInv.amountInvested += amount;
+                      updatedInv.currentValue += amount;
+                  }
+                  return updatedInv;
+              }
+              return inv;
+          }));
+      } else if (type === 'REDEEM') {
+           // 1. Update Investment Data
+           setInvestments(prev => prev.map(inv => {
+               if (inv.id === investmentId) {
+                   // Decrease current value
+                   const newValue = Math.max(0, inv.currentValue - amount);
+                   // Decrease invested amount proportionally (optional, but keeps profit % sane)
+                   // Ratio: amount / currentValue
+                   const ratio = amount / inv.currentValue;
+                   const deductionInvested = inv.amountInvested * ratio;
+
+                   return {
+                       ...inv,
+                       currentValue: newValue,
+                       amountInvested: inv.amountInvested - deductionInvested
+                   };
+               }
+               return inv;
+           }));
+
+           // 2. Add to Destination Account
+           if (accountId) {
+               setAccounts(prev => prev.map(a => a.id === accountId ? {...a, balance: a.balance + amount} : a));
+               
+               const txn: Transaction = {
+                id: `txn_red_${Date.now()}`,
+                accountId: accountId,
+                date: date,
+                amount: amount, // Positive income
+                merchant: 'Resgate Investimento',
+                category: 'Renda', // Or special category
+                status: 'completed',
+                owner: 'me'
+             };
+             setTransactions(prev => [txn, ...prev]);
+           }
       }
   };
 
@@ -613,7 +688,7 @@ const App = () => {
                         </div>
                         <div className="bg-gradient-to-br from-primary/10 to-slate-900 border border-primary/20 p-6 rounded-2xl flex flex-col justify-center items-start">
                             <button onClick={() => setIsAddInvestmentOpen(true)} className="w-full bg-primary hover:bg-primary/90 text-white py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg transition-all text-sm font-medium">
-                            <Plus size={18} /> Novo Aporte
+                            <Plus size={18} /> Novo Ativo
                             </button>
                         </div>
                     </div>
@@ -622,7 +697,13 @@ const App = () => {
                     <div>
                         <h3 className="text-lg font-semibold text-white mb-4">Minha Carteira</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {investments.length > 0 ? investments.map(inv => (<InvestmentCard key={inv.id} investment={inv} />)) : (
+                            {investments.length > 0 ? investments.map(inv => (
+                                <InvestmentCard 
+                                    key={inv.id} 
+                                    investment={inv} 
+                                    onAction={(type, inv) => setInvestmentAction({type, investment: inv})}
+                                />
+                            )) : (
                                 <p className="text-slate-500 text-sm col-span-full text-center py-10 bg-slate-800/30 rounded-xl border border-dashed border-slate-700">Nenhum investimento cadastrado.</p>
                             )}
                         </div>
@@ -674,6 +755,14 @@ const App = () => {
       <AddInvestmentModal isOpen={isAddInvestmentOpen} onClose={() => setIsAddInvestmentOpen(false)} onSave={handleAddInvestment} />
       <SecurityModal isOpen={isSecurityModalOpen} onClose={() => setIsSecurityModalOpen(false)} />
       <PartnerConnectModal isOpen={isPartnerModalOpen} onClose={() => setIsPartnerModalOpen(false)} onConnect={handlePartnerConnect} />
+      <InvestmentActionModal 
+        isOpen={!!investmentAction} 
+        onClose={() => setInvestmentAction(null)} 
+        investment={investmentAction?.investment || null}
+        actionType={investmentAction?.type || null}
+        accounts={filteredAccounts}
+        onConfirm={handleInvestmentActionConfirm}
+      />
     </div>
   );
 };

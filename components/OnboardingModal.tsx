@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { ArrowRight, User, GraduationCap, Shield, Target, TrendingUp, Wallet, AlertCircle, DollarSign, Calendar } from 'lucide-react';
+import { ArrowRight, User, GraduationCap, Shield, Target, TrendingUp, Wallet, AlertCircle, DollarSign } from 'lucide-react';
 import { UserProfile, KnowledgeLevel, Goal, GoalType } from '../types';
 
 interface OnboardingModalProps {
@@ -19,17 +19,9 @@ const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onComplete })
   const [selectedGoalType, setSelectedGoalType] = useState<GoalType | null>(null);
   
   // Dynamic Detail Data (depending on goal)
-  const [totalDebt, setTotalDebt] = useState(''); // For DEBT_PAYOFF and General
-  const [liquidAssets, setLiquidAssets] = useState(''); // For ALL
+  const [totalDebt, setTotalDebt] = useState(''); 
+  const [liquidAssets, setLiquidAssets] = useState(''); 
   
-  // Retirement Specifics
-  const [currentAge, setCurrentAge] = useState('');
-  const [retirementAge, setRetirementAge] = useState('');
-  const [desiredIncome, setDesiredIncome] = useState('');
-  
-  // Purchase Specifics
-  const [purchaseValue, setPurchaseValue] = useState('');
-
   if (!isOpen) return null;
 
   const handleFinish = () => {
@@ -41,32 +33,24 @@ const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onComplete })
           partnerConfig: { isConnected: false, permissions: { shareGoals: false, shareNetWorth: false, shareTransactions: false } }
       };
 
-      // Create comprehensive initial goal
+      // Create generic initial goal based on selection
       const initialGoals: Goal[] = [];
       if (selectedGoalType) {
           let title = "Meu Objetivo Principal";
-          let target = 0;
-          let details = undefined;
+          let target = 0; // Placeholder, user can edit later
 
           if (selectedGoalType === 'RETIREMENT') {
-              title = "Independência Financeira";
-              // Estimate target: Monthly Income / 0.005 (Rule of thumb for safe withdrawal)
-              const income = parseFloat(desiredIncome) || 5000;
-              target = income / 0.005; 
-              details = {
-                  currentAge: parseInt(currentAge) || 25,
-                  retirementAge: parseInt(retirementAge) || 65,
-                  desiredMonthlyIncome: income
-              };
+              title = "Viver de Renda";
+              target = 1000000; // Generic target
           } else if (selectedGoalType === 'PURCHASE') {
-              title = "Realizar Sonho";
-              target = parseFloat(purchaseValue) || 50000;
+              title = "Realizar Sonho (Casa/Carro)";
+              target = 50000;
           } else if (selectedGoalType === 'DEBT_PAYOFF') {
-              title = "Liberdade das Dívidas";
-              target = parseFloat(totalDebt) || 1000;
+              title = "Sair das Dívidas";
+              target = parseFloat(totalDebt) || 5000;
           } else if (selectedGoalType === 'EMERGENCY_FUND') {
-              title = "Reserva de Segurança";
-              target = (parseFloat(desiredIncome) || 3000) * 6; // Default to 6 months of "income" if provided, else placeholder
+              title = "Reserva de Emergência";
+              target = 15000; 
           }
 
           initialGoals.push({
@@ -75,19 +59,18 @@ const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onComplete })
               type: selectedGoalType,
               targetAmount: target,
               currentAmount: selectedGoalType === 'EMERGENCY_FUND' ? (parseFloat(liquidAssets) || 0) : 0,
-              retirementDetails: details
           });
       }
 
       onComplete(profile, initialGoals);
   };
 
-  const totalSteps = 5;
+  const totalSteps = 4;
   const progress = (step / totalSteps) * 100;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950 p-4">
-      <div className="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col relative min-h-[600px]">
+      <div className="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col relative min-h-[500px]">
         
         {/* Progress Bar */}
         <div className="w-full h-1 bg-slate-800 absolute top-0 left-0">
@@ -106,7 +89,7 @@ const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onComplete })
                 <User size={32} />
               </div>
               <h2 className="text-3xl font-bold text-white">Olá! Bem-vindo.</h2>
-              <p className="text-slate-400 text-lg">O WealthWise é seu estrategista financeiro pessoal. Vamos criar um plano sob medida para você. Como devemos te chamar?</p>
+              <p className="text-slate-400 text-lg">O WealthWise é seu organizador financeiro pessoal. Como devemos te chamar?</p>
               <input 
                 type="text" 
                 value={name}
@@ -126,7 +109,7 @@ const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onComplete })
                  <GraduationCap size={32} />
                </div>
                <h2 className="text-2xl font-bold text-white">Nível de Experiência</h2>
-               <p className="text-slate-400">Para adaptarmos a linguagem e as recomendações, como você se avalia?</p>
+               <p className="text-slate-400">Para adaptarmos a linguagem, como você se avalia?</p>
 
                <div className="grid grid-cols-1 gap-3">
                    {[
@@ -158,25 +141,9 @@ const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onComplete })
                  <Target size={32} />
                </div>
                <h2 className="text-2xl font-bold text-white">Qual seu foco principal?</h2>
-               <p className="text-slate-400">Escolha sua prioridade número 1 para iniciarmos o planejamento.</p>
+               <p className="text-slate-400">Escolha sua prioridade número 1 hoje.</p>
 
                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                   <button
-                     onClick={() => setSelectedGoalType('RETIREMENT')}
-                     className={`p-4 rounded-xl border text-left transition-all ${selectedGoalType === 'RETIREMENT' ? 'bg-emerald-500/20 border-emerald-500' : 'bg-slate-800/50 border-slate-700 hover:bg-slate-800'}`}
-                   >
-                       <TrendingUp className="mb-2 text-emerald-400" size={24} />
-                       <h4 className="text-white font-bold text-sm">Viver de Renda</h4>
-                       <p className="text-[10px] text-slate-400">Aposentadoria e IF.</p>
-                   </button>
-                   <button
-                     onClick={() => setSelectedGoalType('PURCHASE')}
-                     className={`p-4 rounded-xl border text-left transition-all ${selectedGoalType === 'PURCHASE' ? 'bg-emerald-500/20 border-emerald-500' : 'bg-slate-800/50 border-slate-700 hover:bg-slate-800'}`}
-                   >
-                       <Wallet className="mb-2 text-emerald-400" size={24} />
-                       <h4 className="text-white font-bold text-sm">Comprar Bens</h4>
-                       <p className="text-[10px] text-slate-400">Carro, Casa, Sonho.</p>
-                   </button>
                    <button
                      onClick={() => setSelectedGoalType('DEBT_PAYOFF')}
                      className={`p-4 rounded-xl border text-left transition-all ${selectedGoalType === 'DEBT_PAYOFF' ? 'bg-emerald-500/20 border-emerald-500' : 'bg-slate-800/50 border-slate-700 hover:bg-slate-800'}`}
@@ -190,89 +157,31 @@ const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onComplete })
                      className={`p-4 rounded-xl border text-left transition-all ${selectedGoalType === 'EMERGENCY_FUND' ? 'bg-emerald-500/20 border-emerald-500' : 'bg-slate-800/50 border-slate-700 hover:bg-slate-800'}`}
                    >
                        <Shield className="mb-2 text-emerald-400" size={24} />
-                       <h4 className="text-white font-bold text-sm">Segurança</h4>
-                       <p className="text-[10px] text-slate-400">Reserva de Emergência.</p>
+                       <h4 className="text-white font-bold text-sm">Guardar Dinheiro</h4>
+                       <p className="text-[10px] text-slate-400">Reserva de segurança.</p>
+                   </button>
+                   <button
+                     onClick={() => setSelectedGoalType('RETIREMENT')}
+                     className={`p-4 rounded-xl border text-left transition-all ${selectedGoalType === 'RETIREMENT' ? 'bg-emerald-500/20 border-emerald-500' : 'bg-slate-800/50 border-slate-700 hover:bg-slate-800'}`}
+                   >
+                       <TrendingUp className="mb-2 text-emerald-400" size={24} />
+                       <h4 className="text-white font-bold text-sm">Viver de Renda</h4>
+                       <p className="text-[10px] text-slate-400">Investir pro futuro.</p>
+                   </button>
+                   <button
+                     onClick={() => setSelectedGoalType('PURCHASE')}
+                     className={`p-4 rounded-xl border text-left transition-all ${selectedGoalType === 'PURCHASE' ? 'bg-emerald-500/20 border-emerald-500' : 'bg-slate-800/50 border-slate-700 hover:bg-slate-800'}`}
+                   >
+                       <Wallet className="mb-2 text-emerald-400" size={24} />
+                       <h4 className="text-white font-bold text-sm">Comprar Bens</h4>
+                       <p className="text-[10px] text-slate-400">Carro, Casa, Sonhos.</p>
                    </button>
                </div>
             </div>
           )}
 
-          {/* Step 4: Deep Dive (Conditional) */}
+          {/* Step 4: Financial Baseline */}
           {step === 4 && (
-             <div className="animate-fade-in space-y-6">
-                {selectedGoalType === 'RETIREMENT' && (
-                    <>
-                        <div className="w-16 h-16 bg-blue-500/20 text-blue-500 rounded-2xl flex items-center justify-center mb-4">
-                            <Calendar size={32} />
-                        </div>
-                        <h2 className="text-2xl font-bold text-white">Planejando o Futuro</h2>
-                        <p className="text-slate-400">Responda para calcularmos o "Número Mágico" da sua liberdade.</p>
-                        <div className="space-y-3">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-xs text-slate-400 block mb-1">Idade Atual</label>
-                                    <input type="number" value={currentAge} onChange={(e)=>setCurrentAge(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white outline-none focus:border-primary" />
-                                </div>
-                                <div>
-                                    <label className="text-xs text-slate-400 block mb-1">Idade Aposentadoria</label>
-                                    <input type="number" value={retirementAge} onChange={(e)=>setRetirementAge(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white outline-none focus:border-primary" />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="text-xs text-slate-400 block mb-1">Renda Mensal Desejada (Valores de Hoje)</label>
-                                <input type="number" value={desiredIncome} onChange={(e)=>setDesiredIncome(e.target.value)} placeholder="Ex: 5000" className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white outline-none focus:border-primary" />
-                            </div>
-                        </div>
-                    </>
-                )}
-                
-                {selectedGoalType === 'DEBT_PAYOFF' && (
-                    <>
-                         <div className="w-16 h-16 bg-rose-500/20 text-rose-500 rounded-2xl flex items-center justify-center mb-4">
-                            <AlertCircle size={32} />
-                        </div>
-                        <h2 className="text-2xl font-bold text-white">Raio-X da Dívida</h2>
-                        <p className="text-slate-400">Qual o montante total que você precisa quitar?</p>
-                        <div>
-                            <label className="text-xs text-slate-400 block mb-1">Valor Total da Dívida</label>
-                            <input type="number" value={totalDebt} onChange={(e)=>setTotalDebt(e.target.value)} placeholder="R$ 0,00" className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white text-xl font-bold outline-none focus:border-primary" />
-                        </div>
-                    </>
-                )}
-
-                {selectedGoalType === 'PURCHASE' && (
-                    <>
-                         <div className="w-16 h-16 bg-emerald-500/20 text-emerald-500 rounded-2xl flex items-center justify-center mb-4">
-                            <Wallet size={32} />
-                        </div>
-                        <h2 className="text-2xl font-bold text-white">Quanto custa o sonho?</h2>
-                        <p className="text-slate-400">Qual o valor estimado do bem que você quer adquirir?</p>
-                        <div>
-                            <label className="text-xs text-slate-400 block mb-1">Valor do Bem</label>
-                            <input type="number" value={purchaseValue} onChange={(e)=>setPurchaseValue(e.target.value)} placeholder="R$ 0,00" className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white text-xl font-bold outline-none focus:border-primary" />
-                        </div>
-                    </>
-                )}
-                
-                {/* Fallback for Emergency Fund or if type allows skipping detail */}
-                {selectedGoalType === 'EMERGENCY_FUND' && (
-                    <>
-                         <div className="w-16 h-16 bg-blue-500/20 text-blue-500 rounded-2xl flex items-center justify-center mb-4">
-                            <Shield size={32} />
-                        </div>
-                        <h2 className="text-2xl font-bold text-white">Custo de Vida</h2>
-                        <p className="text-slate-400">Para calcular a reserva (geralmente 6 meses), qual seu custo de vida mensal estimado?</p>
-                        <div>
-                            <label className="text-xs text-slate-400 block mb-1">Custo Mensal</label>
-                            <input type="number" value={desiredIncome} onChange={(e)=>setDesiredIncome(e.target.value)} placeholder="R$ 0,00" className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white text-xl font-bold outline-none focus:border-primary" />
-                        </div>
-                    </>
-                )}
-             </div>
-          )}
-
-          {/* Step 5: Financial Baseline */}
-          {step === 5 && (
             <div className="animate-fade-in space-y-6">
               <div className="w-16 h-16 bg-slate-700/50 text-slate-300 rounded-2xl flex items-center justify-center mb-4">
                 <DollarSign size={32} />
@@ -282,7 +191,7 @@ const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onComplete })
               
               <div className="space-y-4">
                  <div>
-                    <label className="block text-xs font-medium text-emerald-400 mb-1">Patrimônio Líquido (Dinheiro Guardado/Investido)</label>
+                    <label className="block text-xs font-medium text-emerald-400 mb-1">Dinheiro Guardado / Investido</label>
                     <div className="flex items-center bg-slate-800/50 rounded-xl px-4 border border-slate-700">
                         <span className="text-slate-400 mr-2">R$</span>
                         <input 
@@ -295,21 +204,19 @@ const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onComplete })
                     </div>
                  </div>
 
-                 {selectedGoalType !== 'DEBT_PAYOFF' && (
-                     <div>
-                        <label className="block text-xs font-medium text-rose-400 mb-1">Total em Dívidas (Se houver)</label>
-                        <div className="flex items-center bg-slate-800/50 rounded-xl px-4 border border-slate-700">
-                            <span className="text-slate-400 mr-2">R$</span>
-                            <input 
-                                type="number"
-                                value={totalDebt}
-                                onChange={(e) => setTotalDebt(e.target.value)}
-                                placeholder="0,00"
-                                className="bg-transparent w-full text-white font-bold text-lg py-3 outline-none"
-                            />
-                        </div>
-                     </div>
-                 )}
+                 <div>
+                    <label className="block text-xs font-medium text-rose-400 mb-1">Total em Dívidas (Se houver)</label>
+                    <div className="flex items-center bg-slate-800/50 rounded-xl px-4 border border-slate-700">
+                        <span className="text-slate-400 mr-2">R$</span>
+                        <input 
+                            type="number"
+                            value={totalDebt}
+                            onChange={(e) => setTotalDebt(e.target.value)}
+                            placeholder="0,00"
+                            className="bg-transparent w-full text-white font-bold text-lg py-3 outline-none"
+                        />
+                    </div>
+                 </div>
               </div>
             </div>
           )}
@@ -328,7 +235,7 @@ const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onComplete })
             disabled={(step === 1 && !name) || (step === 3 && !selectedGoalType)}
             className="bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2 transition-all shadow-lg shadow-primary/20"
           >
-            {step === totalSteps ? 'Finalizar & Analisar' : 'Próximo'} <ArrowRight size={18} />
+            {step === totalSteps ? 'Finalizar' : 'Próximo'} <ArrowRight size={18} />
           </button>
         </div>
 

@@ -1,14 +1,15 @@
 
 import React from 'react';
-import { TrendingUp, Calendar, DollarSign, Briefcase, Clock } from 'lucide-react';
+import { TrendingUp, Calendar, DollarSign, Briefcase, Clock, Plus, Minus } from 'lucide-react';
 import { Investment } from '../types';
 import { MONTHLY_CDI_RATE } from '../constants';
 
 interface InvestmentCardProps {
   investment: Investment;
+  onAction: (type: 'CONTRIBUTE' | 'REDEEM', investment: Investment) => void;
 }
 
-const InvestmentCard: React.FC<InvestmentCardProps> = ({ investment }) => {
+const InvestmentCard: React.FC<InvestmentCardProps> = ({ investment, onAction }) => {
   const formatBRL = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
   
   // Calculate Projections
@@ -73,7 +74,7 @@ const InvestmentCard: React.FC<InvestmentCardProps> = ({ investment }) => {
       </div>
 
       {/* Projection Section */}
-      <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700/50 flex justify-between items-center">
+      <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700/50 flex justify-between items-center mb-4">
         <div>
           <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Renda Projetada</p>
           <p className="text-emerald-400 font-semibold text-sm flex items-center gap-1">
@@ -96,6 +97,22 @@ const InvestmentCard: React.FC<InvestmentCardProps> = ({ investment }) => {
               </p>
            </div>
         )}
+      </div>
+
+      {/* Actions */}
+      <div className="grid grid-cols-2 gap-2">
+          <button 
+             onClick={() => onAction('CONTRIBUTE', investment)}
+             className="flex items-center justify-center gap-2 py-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 transition-colors text-xs font-bold uppercase tracking-wider"
+          >
+              <Plus size={14} /> Aportar
+          </button>
+          <button 
+             onClick={() => onAction('REDEEM', investment)}
+             className="flex items-center justify-center gap-2 py-2 rounded-lg bg-slate-800 hover:bg-rose-500/10 text-slate-400 hover:text-rose-400 border border-slate-700 hover:border-rose-500/20 transition-colors text-xs font-bold uppercase tracking-wider"
+          >
+              <Minus size={14} /> Resgatar
+          </button>
       </div>
     </div>
   );
