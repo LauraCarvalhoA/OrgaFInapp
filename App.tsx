@@ -47,15 +47,21 @@ import { generateMonthlyInsight } from './services/geminiService';
 
 const STORAGE_KEY = 'wealthwise_data_v1';
 
-// Helper to load initial state safely
+// Helper to load initial state safely with error checking
 const loadFromStorage = <T,>(key: string, defaultValue: T): T => {
   try {
+    if (typeof window === 'undefined' || !window.localStorage) return defaultValue;
     const stored = localStorage.getItem(STORAGE_KEY);
     if (!stored) return defaultValue;
+    
     const parsed = JSON.parse(stored);
-    return parsed[key] !== undefined ? parsed[key] : defaultValue;
+    // Check if the key exists in the parsed object
+    if (parsed && parsed[key] !== undefined) {
+      return parsed[key];
+    }
+    return defaultValue;
   } catch (e) {
-    console.error("Failed to load from storage", e);
+    console.warn(`Failed to load ${key} from storage, using default.`, e);
     return defaultValue;
   }
 };
@@ -88,28 +94,32 @@ const App = () => {
 
   // Persistence Effect
   useEffect(() => {
-    const data = {
-      userProfile,
-      accounts,
-      transactions,
-      budgets,
-      investments,
-      goals,
-      educationModules
-    };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    try {
+      const data = {
+        userProfile,
+        accounts,
+        transactions,
+        budgets,
+        investments,
+        goals,
+        educationModules
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch (e) {
+      console.error("Failed to save to localStorage", e);
+    }
   }, [userProfile, accounts, transactions, budgets, investments, goals, educationModules]);
 
   // Filter Data based on View Mode
-  const filteredAccounts = accounts.filter(a => viewMode === 'joint' || a.owner === viewMode || a.owner === 'joint');
-  const filteredTransactions = transactions.filter(t => viewMode === 'joint' || t.owner === viewMode || t.owner === 'joint');
+  const filteredAccounts = (accounts || []).filter(a => viewMode === 'joint' || a.owner === viewMode || a.owner === 'joint');
+  const filteredTransactions = (transactions || []).filter(t => viewMode === 'joint' || t.owner === viewMode || t.owner === 'joint');
 
   // Helper: Format Currency BRL
-  const formatBRL = (amount: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount);
+  const formatBRL = (amount: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount || 0);
 
   // Derived Metrics
   const bankBalance = filteredAccounts.filter(a => a.type !== AccountType.INVESTMENT).reduce((sum, acc) => sum + acc.balance, 0);
-  const investmentBalance = investments.reduce((sum, inv) => sum + inv.currentValue, 0); 
+  const investmentBalance = (investments || []).reduce((sum, inv) => sum + inv.currentValue, 0); 
   const totalNetWorth = bankBalance + investmentBalance;
   
   // --- Dashboard Stats Calculation (Period Sensitive) ---
@@ -147,8 +157,8 @@ const App = () => {
     .reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
   // Calculate Investment Yield (Approximate for Dashboard)
-  const totalInvestedPrincipal = investments.reduce((sum, inv) => sum + inv.amountInvested, 0);
-  const totalInvestedValue = investments.reduce((sum, inv) => sum + inv.currentValue, 0);
+  const totalInvestedPrincipal = (investments || []).reduce((sum, inv) => sum + inv.amountInvested, 0);
+  const totalInvestedValue = (investments || []).reduce((sum, inv) => sum + inv.currentValue, 0);
   const absoluteYield = totalInvestedValue - totalInvestedPrincipal;
   const yieldPercentage = totalInvestedPrincipal > 0 ? (absoluteYield / totalInvestedPrincipal) * 100 : 0;
 
@@ -169,15 +179,15 @@ const App = () => {
   useEffect(() => {
     const fetchInsight = async () => {
       // Only fetch if we have API KEY (safe check logic inside service)
-      if (transactions.length > 0) {
+      if (transactions && transactions.length > 0) {
         const insight = await generateMonthlyInsight(filteredAccounts, filteredTransactions, userProfile || undefined);
         setDailyInsight(insight);
       }
     };
-    if (userProfile && transactions.length > 0) {
+    if (userProfile && transactions && transactions.length > 0) {
         fetchInsight();
     }
-  }, [transactions.length, userProfile, viewMode]);
+  }, [transactions?.length, userProfile, viewMode]);
 
   // Handlers
   const handleConnectAccount = (institution: string, initialBalance: number, type: AccountType, name: string) => {
@@ -524,7 +534,7 @@ const App = () => {
             </header>
 
             {/* Empty State / Zero State Handling */}
-            {activeTab === 'dashboard' && accounts.length === 0 ? (
+            {activeTab === 'dashboard' && (!accounts || accounts.length === 0) ? (
                 <div className="flex flex-col items-center justify-center h-[50vh] text-center space-y-6 animate-fade-in">
                     <div className="w-20 h-20 bg-slate-800 rounded-full flex items-center justify-center mb-2 shadow-xl border border-slate-700">
                         <Wallet size={40} className="text-emerald-500" />
@@ -746,7 +756,7 @@ const App = () => {
       </div>
 
       {/* Mobile Bottom Navigation */}
-      {userProfile && accounts.length > 0 && (
+      {userProfile && accounts && accounts.length > 0 && (
           <div className="md:hidden fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-lg border-t border-slate-800 pb-safe-bottom z-40">
             <div className="flex justify-around items-center p-3">
                 <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center gap-1 ${activeTab === 'dashboard' ? 'text-primary' : 'text-slate-500'}`}>

@@ -33,6 +33,14 @@
       }
     </style>
     <script>
+      // POLYFILL: Prevent "process is not defined" crash in browsers
+      window.process = {
+        env: {
+          NODE_ENV: 'production'
+        }
+      };
+    </script>
+    <script>
       tailwind.config = {
         theme: {
           extend: {

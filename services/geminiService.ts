@@ -3,17 +3,19 @@ import { GoogleGenAI, Chat, GenerateContentResponse } from "@google/genai";
 import { Account, Transaction, Investment, UserProfile, Goal } from "../types";
 import { CURRENT_CDI_RATE } from "../constants";
 
-// Safely attempt to access API KEY. 
-// In some browser environments, accessing 'process' directly might throw if not polyfilled.
+// Safely attempt to access API KEY without crashing the browser
 let apiKey = '';
 try {
-  // @ts-ignore
-  apiKey = process.env.API_KEY || '';
+  // Check if process exists before accessing it
+  if (typeof process !== 'undefined' && process.env) {
+    apiKey = process.env.API_KEY || '';
+  }
 } catch (e) {
-  console.warn("API Key could not be loaded from process.env. AI features will be disabled.");
+  console.warn("Environment variable access failed. AI features disabled.");
 }
 
-const ai = new GoogleGenAI({ apiKey });
+// Initialize AI only if we have a key, otherwise create a dummy handle to prevent crashes
+const ai = new GoogleGenAI({ apiKey: apiKey || 'dummy_key' });
 
 /**
  * Starts a chat session with context about the user's finances.
@@ -57,6 +59,14 @@ export const createFinancialAdvisorChat = (
     3. Always respect Brazilian tax laws (IR, IOF).
   `;
 
+  if (!apiKey) {
+      // Return a dummy object if no API key, to prevent crash on method call
+      // This is a workaround for UI components expecting a chat object
+      return {
+          sendMessage: async () => ({ text: "Erro: Chave de API não configurada. Verifique o arquivo .env ou as configurações do Vercel." } as any)
+      } as any;
+  }
+
   return ai.chats.create({
     model: 'gemini-2.5-flash',
     config: {
@@ -67,7 +77,7 @@ export const createFinancialAdvisorChat = (
 };
 
 export const generateMonthlyInsight = async (accounts: Account[], transactions: Transaction[], userProfile?: UserProfile): Promise<string> => {
-  if (!apiKey) return "Organize suas finanças para crescer.";
+  if (!apiKey) return "Organize suas finanças para crescer (Modo Offline).";
   
   const totalBalance = accounts.reduce((sum, acc) => sum + acc.balance, 0);
   const prompt = `
