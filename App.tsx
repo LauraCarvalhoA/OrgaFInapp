@@ -45,15 +45,30 @@ import PartnerConnectModal from './components/PartnerConnectModal';
 import InvestmentActionModal from './components/InvestmentActionModal';
 import { generateMonthlyInsight } from './services/geminiService';
 
+const STORAGE_KEY = 'wealthwise_data_v1';
+
+// Helper to load initial state safely
+const loadFromStorage = <T,>(key: string, defaultValue: T): T => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (!stored) return defaultValue;
+    const parsed = JSON.parse(stored);
+    return parsed[key] !== undefined ? parsed[key] : defaultValue;
+  } catch (e) {
+    console.error("Failed to load from storage", e);
+    return defaultValue;
+  }
+};
+
 const App = () => {
-  // Global State - Start EMPTY for manual tracking
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [budgets, setBudgets] = useState<Budget[]>([]);
-  const [investments, setInvestments] = useState<Investment[]>([]);
-  const [goals, setGoals] = useState<Goal[]>([]);
-  const [educationModules, setEducationModules] = useState<EducationModule[]>(MOCK_EDUCATION_MODULES);
+  // Global State - Initialized from LocalStorage if available
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(() => loadFromStorage('userProfile', null));
+  const [accounts, setAccounts] = useState<Account[]>(() => loadFromStorage('accounts', []));
+  const [transactions, setTransactions] = useState<Transaction[]>(() => loadFromStorage('transactions', []));
+  const [budgets, setBudgets] = useState<Budget[]>(() => loadFromStorage('budgets', []));
+  const [investments, setInvestments] = useState<Investment[]>(() => loadFromStorage('investments', []));
+  const [goals, setGoals] = useState<Goal[]>(() => loadFromStorage('goals', []));
+  const [educationModules, setEducationModules] = useState<EducationModule[]>(() => loadFromStorage('educationModules', MOCK_EDUCATION_MODULES));
   
   const [activeTab, setActiveTab] = useState<'dashboard' | 'investments' | 'advisor' | 'budgets' | 'goals' | 'education'>('dashboard');
   const [viewMode, setViewMode] = useState<AccountOwner | 'joint'>('me'); // Couple view toggle
@@ -71,6 +86,19 @@ const App = () => {
   // Investment Actions State
   const [investmentAction, setInvestmentAction] = useState<{type: 'CONTRIBUTE' | 'REDEEM', investment: Investment} | null>(null);
 
+  // Persistence Effect
+  useEffect(() => {
+    const data = {
+      userProfile,
+      accounts,
+      transactions,
+      budgets,
+      investments,
+      goals,
+      educationModules
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  }, [userProfile, accounts, transactions, budgets, investments, goals, educationModules]);
 
   // Filter Data based on View Mode
   const filteredAccounts = accounts.filter(a => viewMode === 'joint' || a.owner === viewMode || a.owner === 'joint');
@@ -140,7 +168,8 @@ const App = () => {
   // Load AI Insight on Mount (only if user has data)
   useEffect(() => {
     const fetchInsight = async () => {
-      if (process.env.API_KEY && transactions.length > 0) {
+      // Only fetch if we have API KEY (safe check logic inside service)
+      if (transactions.length > 0) {
         const insight = await generateMonthlyInsight(filteredAccounts, filteredTransactions, userProfile || undefined);
         setDailyInsight(insight);
       }

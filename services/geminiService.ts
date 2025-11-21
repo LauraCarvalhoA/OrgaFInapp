@@ -3,7 +3,16 @@ import { GoogleGenAI, Chat, GenerateContentResponse } from "@google/genai";
 import { Account, Transaction, Investment, UserProfile, Goal } from "../types";
 import { CURRENT_CDI_RATE } from "../constants";
 
-const apiKey = process.env.API_KEY || '';
+// Safely attempt to access API KEY. 
+// In some browser environments, accessing 'process' directly might throw if not polyfilled.
+let apiKey = '';
+try {
+  // @ts-ignore
+  apiKey = process.env.API_KEY || '';
+} catch (e) {
+  console.warn("API Key could not be loaded from process.env. AI features will be disabled.");
+}
+
 const ai = new GoogleGenAI({ apiKey });
 
 /**
@@ -58,6 +67,8 @@ export const createFinancialAdvisorChat = (
 };
 
 export const generateMonthlyInsight = async (accounts: Account[], transactions: Transaction[], userProfile?: UserProfile): Promise<string> => {
+  if (!apiKey) return "Organize suas finanças para crescer.";
+  
   const totalBalance = accounts.reduce((sum, acc) => sum + acc.balance, 0);
   const prompt = `
     Context: User level is ${userProfile?.knowledgeLevel || 'Beginner'}.
@@ -79,6 +90,8 @@ export const generateMonthlyInsight = async (accounts: Account[], transactions: 
  * Analyzes a specific financial goal (e.g., Buy Car) and suggests a strategy (Cash vs Finance).
  */
 export const analyzeGoalStrategy = async (goal: Goal, userProfile: UserProfile, investments: Investment[]): Promise<string> => {
+  if (!apiKey) return "Configuração de IA necessária para análise detalhada.";
+
   let specifics = "";
   if (goal.type === 'RETIREMENT' && goal.retirementDetails) {
       specifics = `
@@ -124,6 +137,7 @@ export const analyzeGoalStrategy = async (goal: Goal, userProfile: UserProfile, 
 
 export const getPersonalizedNews = async (investments: Investment[]): Promise<{title: string, summary: string}[]> => {
     if (investments.length === 0) return [{ title: "Comece a investir", summary: "Adicione ativos para receber notícias personalizadas." }];
+    if (!apiKey) return [{ title: "Mercado Financeiro", summary: "Acompanhe os indicadores econômicos." }];
 
     const tickers = investments.map(i => i.ticker || i.name).join(', ');
     const prompt = `
