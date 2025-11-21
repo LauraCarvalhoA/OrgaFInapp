@@ -33,12 +33,12 @@
       }
     </style>
     <script>
-      // POLYFILL: Prevent "process is not defined" crash in browsers
-      window.process = {
-        env: {
-          NODE_ENV: 'production'
-        }
-      };
+      // ROBUST POLYFILL: Ensure process.env exists immediately to prevent module crashes
+      if (typeof window !== 'undefined') {
+        window.process = window.process || {};
+        window.process.env = window.process.env || {};
+        window.process.env.NODE_ENV = 'production';
+      }
     </script>
     <script>
       tailwind.config = {

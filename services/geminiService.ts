@@ -1,21 +1,24 @@
-
 import { GoogleGenAI, Chat, GenerateContentResponse } from "@google/genai";
 import { Account, Transaction, Investment, UserProfile, Goal } from "../types";
 import { CURRENT_CDI_RATE } from "../constants";
 
-// Safely attempt to access API KEY without crashing the browser
-let apiKey = '';
-try {
-  // Check if process exists before accessing it
-  if (typeof process !== 'undefined' && process.env) {
-    apiKey = process.env.API_KEY || '';
-  }
-} catch (e) {
-  console.warn("Environment variable access failed. AI features disabled.");
-}
+// Helper to lazily get the AI instance. 
+// This prevents the app from crashing on load if process.env is missing or the SDK fails to init immediately.
+const getAI = () => {
+    let apiKey = '';
+    try {
+        // Robust check for environment variable
+        if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+            apiKey = process.env.API_KEY;
+        }
+    } catch (e) {
+        console.warn("Failed to read API Key from environment.");
+    }
 
-// Initialize AI only if we have a key, otherwise create a dummy handle to prevent crashes
-const ai = new GoogleGenAI({ apiKey: apiKey || 'dummy_key' });
+    // Return a safe instance or a dummy one that won't crash the constructor
+    // The actual calls will check for key validity or fail gracefully
+    return new GoogleGenAI({ apiKey: apiKey || 'dummy_key_for_safe_init' });
+};
 
 /**
  * Starts a chat session with context about the user's finances.
@@ -59,26 +62,25 @@ export const createFinancialAdvisorChat = (
     3. Always respect Brazilian tax laws (IR, IOF).
   `;
 
-  if (!apiKey) {
-      // Return a dummy object if no API key, to prevent crash on method call
-      // This is a workaround for UI components expecting a chat object
+  try {
+      const ai = getAI();
+      return ai.chats.create({
+        model: 'gemini-2.5-flash',
+        config: {
+          systemInstruction,
+          temperature: 0.5,
+        },
+      });
+  } catch (e) {
+      console.error("Failed to create chat session", e);
+      // Return a mock object to prevent UI crash
       return {
-          sendMessage: async () => ({ text: "Erro: Chave de API não configurada. Verifique o arquivo .env ou as configurações do Vercel." } as any)
+          sendMessage: async () => ({ text: "Erro ao conectar com o assistente. Verifique sua conexão ou chave de API." })
       } as any;
   }
-
-  return ai.chats.create({
-    model: 'gemini-2.5-flash',
-    config: {
-      systemInstruction,
-      temperature: 0.5,
-    },
-  });
 };
 
 export const generateMonthlyInsight = async (accounts: Account[], transactions: Transaction[], userProfile?: UserProfile): Promise<string> => {
-  if (!apiKey) return "Organize suas finanças para crescer (Modo Offline).";
-  
   const totalBalance = accounts.reduce((sum, acc) => sum + acc.balance, 0);
   const prompt = `
     Context: User level is ${userProfile?.knowledgeLevel || 'Beginner'}.
@@ -86,6 +88,7 @@ export const generateMonthlyInsight = async (accounts: Account[], transactions: 
   `;
 
   try {
+    const ai = getAI();
     const response: GenerateContentResponse = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: prompt,
@@ -100,8 +103,6 @@ export const generateMonthlyInsight = async (accounts: Account[], transactions: 
  * Analyzes a specific financial goal (e.g., Buy Car) and suggests a strategy (Cash vs Finance).
  */
 export const analyzeGoalStrategy = async (goal: Goal, userProfile: UserProfile, investments: Investment[]): Promise<string> => {
-  if (!apiKey) return "Configuração de IA necessária para análise detalhada.";
-
   let specifics = "";
   if (goal.type === 'RETIREMENT' && goal.retirementDetails) {
       specifics = `
@@ -135,6 +136,7 @@ export const analyzeGoalStrategy = async (goal: Goal, userProfile: UserProfile, 
   `;
 
   try {
+    const ai = getAI();
     const response: GenerateContentResponse = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: prompt,
@@ -147,8 +149,7 @@ export const analyzeGoalStrategy = async (goal: Goal, userProfile: UserProfile, 
 
 export const getPersonalizedNews = async (investments: Investment[]): Promise<{title: string, summary: string}[]> => {
     if (investments.length === 0) return [{ title: "Comece a investir", summary: "Adicione ativos para receber notícias personalizadas." }];
-    if (!apiKey) return [{ title: "Mercado Financeiro", summary: "Acompanhe os indicadores econômicos." }];
-
+    
     const tickers = investments.map(i => i.ticker || i.name).join(', ');
     const prompt = `
         Generate 3 fictional but realistic financial news headlines and one-sentence summaries relevant to these assets: ${tickers}.
@@ -157,6 +158,7 @@ export const getPersonalizedNews = async (investments: Investment[]): Promise<{t
     `;
 
     try {
+        const ai = getAI();
         const response: GenerateContentResponse = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: prompt,
