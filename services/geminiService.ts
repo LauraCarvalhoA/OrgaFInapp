@@ -7,8 +7,12 @@ import { CURRENT_CDI_RATE } from "../constants";
 const getAI = () => {
     let apiKey = '';
     try {
-        // Robust check for environment variable
-        if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+        // Check import.meta.env (Vite / Vercel standard)
+        if (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.API_KEY) {
+             apiKey = (import.meta as any).env.API_KEY;
+        }
+        // Fallback to process.env (Node / Webpack polyfill)
+        else if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
             apiKey = process.env.API_KEY;
         }
     } catch (e) {

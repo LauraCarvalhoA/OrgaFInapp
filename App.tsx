@@ -20,7 +20,8 @@ import {
   BookOpen,
   Calendar,
   Percent,
-  Menu
+  Menu,
+  AlertTriangle
 } from 'lucide-react';
 
 import { Account, Transaction, AccountType, Budget, Investment, UserProfile, AccountOwner, Goal, PartnerConfig, EducationModule } from './types';
@@ -65,7 +66,53 @@ const loadFromStorage = <T,>(key: string, defaultValue: T): T => {
   }
 };
 
-const App = () => {
+// --- Error Boundary Component ---
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: any;
+}
+
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center h-screen bg-slate-900 text-white p-6 text-center">
+          <div className="bg-rose-500/20 p-4 rounded-full mb-4 text-rose-400">
+            <AlertTriangle size={48} />
+          </div>
+          <h2 className="text-2xl font-bold mb-2">Algo deu errado</h2>
+          <p className="text-slate-400 mb-6">Ocorreu um erro ao iniciar o aplicativo.</p>
+          <div className="bg-slate-800 p-4 rounded-lg text-left font-mono text-xs text-rose-300 max-w-lg w-full overflow-auto border border-slate-700 mb-6">
+            {this.state.error?.toString()}
+          </div>
+          <button 
+            onClick={() => { localStorage.clear(); window.location.reload(); }}
+            className="bg-rose-600 hover:bg-rose-700 text-white px-6 py-3 rounded-lg font-medium transition-colors shadow-lg"
+          >
+            Limpar Dados e Recarregar
+          </button>
+          <p className="text-xs text-slate-500 mt-4">Isso apagará os dados locais para corrigir o problema.</p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const AppContent = () => {
   // Global State - Initialized from LocalStorage if available
   const [userProfile, setUserProfile] = useState<UserProfile | null>(() => loadFromStorage('userProfile', null));
   const [accounts, setAccounts] = useState<Account[]>(() => loadFromStorage('accounts', []));
@@ -804,5 +851,11 @@ const App = () => {
     </div>
   );
 };
+
+const App = () => (
+  <ErrorBoundary>
+    <AppContent />
+  </ErrorBoundary>
+);
 
 export default App;
