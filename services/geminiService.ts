@@ -22,7 +22,11 @@ const getAI = () => {
         console.warn("Failed to read API Key from environment.");
     }
 
-    return new GoogleGenAI({ apiKey: apiKey || 'dummy_key_for_safe_init' });
+    if (!apiKey) {
+        throw new Error("API Key not found. Please set it in Settings.");
+    }
+
+    return new GoogleGenAI({ apiKey: apiKey });
 };
 
 /**
@@ -75,9 +79,7 @@ export const createFinancialAdvisorChat = (
       });
   } catch (e) {
       console.error("Failed to create chat session", e);
-      return {
-          sendMessage: async () => ({ text: "Error connecting to AI. Please check your API Key in Settings." })
-      } as any;
+      throw e;
   }
 };
 
@@ -139,7 +141,7 @@ export const analyzeGoalStrategy = async (goal: Goal, userProfile: UserProfile, 
     });
     return response.text || "Unable to generate analysis.";
   } catch (error) {
-    return "Error connecting to financial strategist.";
+    return "Error connecting to financial strategist. Check Settings.";
   }
 };
 
@@ -167,11 +169,11 @@ export const getPersonalizedNews = async (investments: Investment[]): Promise<{t
 };
 
 /**
- * Analyzes a Bank Statement Image and returns structured transactions.
+ * Analyzes a Bank Statement Image/PDF and returns structured transactions.
  */
-export const analyzeBankStatement = async (imageBase64: string): Promise<StatementItem[]> => {
+export const analyzeBankStatement = async (base64Data: string, mimeType: string): Promise<StatementItem[]> => {
     const prompt = `
-        Analyze this bank statement image. Extract all transactions.
+        Analyze this bank statement (image or PDF). Extract all transactions.
         Return a JSON Array where each object has:
         - date (YYYY-MM-DD format)
         - description (string, merchant name)
@@ -187,7 +189,7 @@ export const analyzeBankStatement = async (imageBase64: string): Promise<Stateme
             model: 'gemini-2.5-flash',
             contents: {
                 parts: [
-                    { inlineData: { mimeType: 'image/jpeg', data: imageBase64 } },
+                    { inlineData: { mimeType: mimeType, data: base64Data } },
                     { text: prompt }
                 ]
             },
@@ -195,8 +197,8 @@ export const analyzeBankStatement = async (imageBase64: string): Promise<Stateme
         });
         return JSON.parse(response.text || "[]");
     } catch (e) {
-        console.error(e);
-        throw new Error("Failed to analyze statement");
+        console.error("Gemini Analysis Error:", e);
+        throw new Error("Falha ao analisar extrato. Verifique se a chave API está configurada e se o arquivo é legível.");
     }
 };
 

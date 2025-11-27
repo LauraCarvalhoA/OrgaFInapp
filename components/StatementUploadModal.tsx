@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { X, Upload, FileText, Check, Loader2, AlertCircle } from 'lucide-react';
 import { analyzeBankStatement } from '../services/geminiService';
@@ -21,27 +20,34 @@ const StatementUploadModal: React.FC<StatementUploadModalProps> = ({ isOpen, onC
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Check size (Gemini limit is generous but good practice)
+    if (file.size > 20 * 1024 * 1024) {
+      setError("Arquivo muito grande. Máximo 20MB.");
+      return;
+    }
+
     setIsAnalyzing(true);
     setError('');
     setPreviewData([]);
 
     try {
-      // Convert to Base64
       const reader = new FileReader();
       reader.onloadend = async () => {
         const base64String = (reader.result as string).split(',')[1];
         try {
-            const data = await analyzeBankStatement(base64String);
+            // Pass the dynamic mime type (e.g., application/pdf or image/png)
+            const data = await analyzeBankStatement(base64String, file.type);
             setPreviewData(data);
-        } catch (err) {
-            setError("Não foi possível ler o extrato. Tente uma imagem mais clara.");
+        } catch (err: any) {
+            console.error(err);
+            setError(err.message || "Não foi possível ler o extrato.");
         } finally {
             setIsAnalyzing(false);
         }
       };
       reader.readAsDataURL(file);
     } catch (err) {
-      setError("Erro ao processar arquivo.");
+      setError("Erro ao processar arquivo local.");
       setIsAnalyzing(false);
     }
   };
@@ -50,6 +56,7 @@ const StatementUploadModal: React.FC<StatementUploadModalProps> = ({ isOpen, onC
       onImport(previewData);
       onClose();
       setPreviewData([]);
+      setError('');
   };
 
   return (
@@ -71,8 +78,8 @@ const StatementUploadModal: React.FC<StatementUploadModalProps> = ({ isOpen, onC
                {isAnalyzing ? (
                    <div className="text-center">
                        <Loader2 size={48} className="text-primary animate-spin mx-auto mb-4" />
-                       <p className="text-slate-300 font-medium">Analisando transações...</p>
-                       <p className="text-xs text-slate-500 mt-2">A IA está lendo datas, valores e categorias.</p>
+                       <p className="text-slate-300 font-medium">Analisando documento...</p>
+                       <p className="text-xs text-slate-500 mt-2">A IA está extraindo transações de PDF ou Imagem.</p>
                    </div>
                ) : (
                    <label className="cursor-pointer text-center group">
@@ -81,17 +88,21 @@ const StatementUploadModal: React.FC<StatementUploadModalProps> = ({ isOpen, onC
                        </div>
                        <h3 className="text-lg font-bold text-white mb-2">Envie seu Extrato</h3>
                        <p className="text-slate-400 text-sm max-w-xs mx-auto mb-4">
-                           Faça upload de uma <b>imagem (Print/Foto)</b> do seu extrato bancário.
+                           Faça upload de <b>PDF</b> ou <b>Imagem</b> do seu extrato bancário.
                        </p>
                        <span className="bg-primary hover:bg-primary/90 text-white px-6 py-2 rounded-lg text-sm font-medium transition-colors">
-                           Selecionar Imagem
+                           Selecionar Arquivo
                        </span>
-                       <input type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
+                       <input type="file" accept="image/*,application/pdf" onChange={handleFileUpload} className="hidden" />
                    </label>
                )}
                {error && (
-                   <div className="mt-4 flex items-center gap-2 text-rose-400 text-sm bg-rose-500/10 p-3 rounded-lg">
-                       <AlertCircle size={16} /> {error}
+                   <div className="mt-4 flex flex-col items-center text-center gap-2 text-rose-400 text-sm bg-rose-500/10 p-4 rounded-lg">
+                       <div className="flex items-center gap-2 font-bold"><AlertCircle size={16} /> Erro</div>
+                       <span>{error}</span>
+                       {error.includes("API Key") && (
+                           <p className="text-xs mt-1 text-slate-400">Vá em Configurações (Engrenagem) e adicione sua chave Gemini.</p>
+                       )}
                    </div>
                )}
             </div>
@@ -102,9 +113,9 @@ const StatementUploadModal: React.FC<StatementUploadModalProps> = ({ isOpen, onC
                     <button onClick={() => setPreviewData([])} className="text-xs text-rose-400 hover:text-rose-300">Descartar</button>
                 </div>
                 
-                <div className="border border-slate-700 rounded-xl overflow-hidden">
+                <div className="border border-slate-700 rounded-xl overflow-hidden max-h-[300px] overflow-y-auto">
                     <table className="w-full text-left text-sm">
-                        <thead className="bg-slate-800 text-slate-400">
+                        <thead className="bg-slate-800 text-slate-400 sticky top-0 z-10">
                             <tr>
                                 <th className="p-3">Data</th>
                                 <th className="p-3">Descrição</th>

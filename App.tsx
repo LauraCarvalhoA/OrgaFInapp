@@ -1,4 +1,4 @@
-import React, { useState, useEffect, ReactNode } from 'react';
+import React, { useState, useEffect, ReactNode, Component } from 'react';
 import { 
   Wallet, 
   CreditCard, 
@@ -78,7 +78,7 @@ interface ErrorBoundaryState {
   hasError: boolean;
   error: any;
 }
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   public state: ErrorBoundaryState = { hasError: false, error: null };
   static getDerivedStateFromError(error: any) { return { hasError: true, error }; }
   render() {
@@ -134,22 +134,12 @@ const AppContent = () => {
   }, [userProfile, accounts, transactions, budgets, investments, goals, educationModules]);
 
   // Income Tracking Update Logic
-  // Automatically update Monthly Income in profile based on "Renda" transactions
   useEffect(() => {
     if (userProfile && transactions.length > 0) {
-        // Calculate average income from last 3 months
         const incomeTxns = transactions.filter(t => t.amount > 0 && (t.category === 'Renda' || t.category === 'Salary'));
-        if (incomeTxns.length > 0) {
-             const totalIncome = incomeTxns.reduce((sum, t) => sum + t.amount, 0);
-             // Simplistic average (total / 3 or total / count if < 3 months)
-             // For now, let's just use the latest significant income or manual override
-             // This is a placeholder for more complex logic. 
-             // We won't auto-overwrite if user set it manually recently, but we can suggest it.
-             // For this demo, we assume the user sets it in onboarding, or we update it if it's 0.
-             if (userProfile.monthlyIncome === 0) {
-                 const latestIncome = incomeTxns[0].amount;
-                 setUserProfile(prev => prev ? ({ ...prev, monthlyIncome: latestIncome }) : null);
-             }
+        if (incomeTxns.length > 0 && userProfile.monthlyIncome === 0) {
+             const latestIncome = incomeTxns[0].amount;
+             setUserProfile(prev => prev ? ({ ...prev, monthlyIncome: latestIncome }) : null);
         }
     }
   }, [transactions, userProfile?.monthlyIncome]);
@@ -202,7 +192,7 @@ const AppContent = () => {
 
   const handleStatementImport = (items: StatementItem[]) => {
       const defaultAcc = accounts.find(a => a.isDefault) || accounts[0];
-      if (!defaultAcc) { alert("Adicione uma conta primeiro."); return; }
+      if (!defaultAcc) { alert("Adicione uma conta primeiro para onde importar os lançamentos."); return; }
       
       const newTxns: Transaction[] = items.map((item, i) => ({
           id: `txn_imp_${Date.now()}_${i}`,
@@ -307,7 +297,7 @@ const AppContent = () => {
           setInvestments(prev => prev.map(inv => {
               if (inv.id === investmentId) {
                   let updatedInv = { ...inv };
-                  if (inv.type === 'FII' && quantity && price) {
+                  if ((inv.type === 'FII' || inv.type === 'STOCK' || inv.type === 'CRYPTO') && quantity && price) {
                       const totalOld = inv.amountInvested;
                       const totalNew = quantity * price;
                       const totalQty = (inv.quantity || 0) + quantity;

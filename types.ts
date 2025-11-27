@@ -63,7 +63,7 @@ export interface AISessionMessage {
   timestamp: number;
 }
 
-export type InvestmentType = 'FII' | 'FIXED_INCOME' | 'STOCK' | 'CRYPTO';
+export type InvestmentType = 'FII' | 'FIXED_INCOME' | 'STOCK' | 'CRYPTO' | 'MUTUAL_FUND';
 
 export interface Investment {
   id: string;
