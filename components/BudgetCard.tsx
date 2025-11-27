@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertCircle, CheckCircle, AlertTriangle } from 'lucide-react';
+import { AlertCircle, CheckCircle, AlertTriangle, TrendingDown } from 'lucide-react';
 
 interface BudgetCardProps {
   category: string;
@@ -31,32 +31,34 @@ const BudgetCard: React.FC<BudgetCardProps> = ({ category, spent, limit, onDelet
   }
 
   return (
-    <div className="bg-card border border-slate-700 p-5 rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 relative group">
-      <div className="flex justify-between items-start mb-3">
-        <div>
-          <h4 className="text-white font-medium text-lg">{category}</h4>
-          <p className="text-slate-400 text-sm mt-1">
-            {isExceeded ? (
-              <span className="text-rose-400 font-medium">Excedido por {formatCurrency(Math.abs(remaining))}</span>
-            ) : (
-              <span>{formatCurrency(remaining)} restante</span>
-            )}
-          </p>
+    <div className="bg-card border border-slate-700 p-5 rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 relative group flex flex-col justify-between h-full">
+      <div>
+        <div className="flex justify-between items-start mb-3">
+            <div>
+            <h4 className="text-white font-medium text-lg">{category}</h4>
+            <p className="text-slate-400 text-sm mt-1">
+                {isExceeded ? (
+                <span className="text-rose-400 font-medium">Excedido por {formatCurrency(Math.abs(remaining))}</span>
+                ) : (
+                <span>{formatCurrency(remaining)} restante</span>
+                )}
+            </p>
+            </div>
+            <div className="bg-slate-800 p-2 rounded-lg">
+            {icon}
+            </div>
         </div>
-        <div className="bg-slate-800 p-2 rounded-lg">
-          {icon}
+
+        {/* Progress Bar */}
+        <div className="w-full bg-slate-700 h-3 rounded-full overflow-hidden mb-3">
+            <div 
+            className={`h-full rounded-full transition-all duration-500 ${colorClass}`} 
+            style={{ width: `${percentage}%` }}
+            ></div>
         </div>
       </div>
 
-      {/* Progress Bar */}
-      <div className="w-full bg-slate-700 h-3 rounded-full overflow-hidden mb-3">
-        <div 
-          className={`h-full rounded-full transition-all duration-500 ${colorClass}`} 
-          style={{ width: `${percentage}%` }}
-        ></div>
-      </div>
-
-      <div className="flex justify-between items-center text-xs">
+      <div className="flex justify-between items-center text-xs mt-2">
         <span className="text-slate-300 font-mono font-medium">{formatCurrency(spent)} gasto</span>
         <span className="text-slate-500 font-mono">Limite: {formatCurrency(limit)}</span>
       </div>
@@ -64,7 +66,7 @@ const BudgetCard: React.FC<BudgetCardProps> = ({ category, spent, limit, onDelet
       {onDelete && (
         <button 
           onClick={onDelete}
-          className="absolute top-4 right-12 text-slate-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-all"
+          className="absolute top-4 right-12 text-slate-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-all text-xs"
           title="Delete Budget"
         >
           Remover

@@ -131,10 +131,18 @@ export interface PartnerConfig {
 export interface UserProfile {
   name: string;
   knowledgeLevel: KnowledgeLevel;
+  monthlyIncome: number; // New field for Income Tracking
   
   // Financial Health Snapshot
   totalDebt: number;
   liquidAssets: number;
   
   partnerConfig?: PartnerConfig;
+}
+
+export interface StatementItem {
+    date: string;
+    description: string;
+    amount: number;
+    category: string;
 }

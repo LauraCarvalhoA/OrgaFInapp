@@ -1,12 +1,15 @@
-import { GoogleGenAI, Chat, GenerateContentResponse } from "@google/genai";
-import { Account, Transaction, Investment, UserProfile, Goal } from "../types";
+import { GoogleGenAI, Chat, GenerateContentResponse, Part } from "@google/genai";
+import { Account, Transaction, Investment, UserProfile, Goal, Budget, StatementItem } from "../types";
 import { CURRENT_CDI_RATE } from "../constants";
 
 // Helper to lazily get the AI instance. 
-// This prevents the app from crashing on load if process.env is missing or the SDK fails to init immediately.
 const getAI = () => {
     let apiKey = '';
     try {
+        // Check local storage override first (set via SettingsModal)
+        const localKey = localStorage.getItem('user_api_key');
+        if (localKey) return new GoogleGenAI({ apiKey: localKey });
+
         // Check import.meta.env (Vite / Vercel standard)
         if (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.API_KEY) {
              apiKey = (import.meta as any).env.API_KEY;
@@ -19,8 +22,6 @@ const getAI = () => {
         console.warn("Failed to read API Key from environment.");
     }
 
-    // Return a safe instance or a dummy one that won't crash the constructor
-    // The actual calls will check for key validity or fail gracefully
     return new GoogleGenAI({ apiKey: apiKey || 'dummy_key_for_safe_init' });
 };
 
@@ -39,31 +40,28 @@ export const createFinancialAdvisorChat = (
     `- ${t.date}: ${t.merchant} (R$ ${t.amount}) [${t.category}]`
   ).join('\n');
 
-  const investmentSummary = investments.length > 0 ? investments.map(i => {
-     if (i.type === 'FII') return `- FII ${i.ticker} (${i.quantity} cotas): R$ ${i.currentValue.toFixed(2)} (Div: ${i.lastDividend}) - Início: ${i.startDate}`;
-     return `- Renda Fixa ${i.name} (${i.percentage}% ${i.index}): R$ ${i.currentValue.toFixed(2)} - Início: ${i.startDate}`;
-  }).join('\n') : "No specific investments tracked yet.";
-
   const systemInstruction = `
-    You are WealthWise AI, an advanced financial planner for Brazil.
-    User Level: ${userProfile?.knowledgeLevel || 'BEGINNER'}
-    User Debt: R$ ${userProfile?.totalDebt || 0}
-    User Assets: R$ ${userProfile?.liquidAssets || 0}
+    You are WealthWise AI, an advanced financial planner.
+    Language: ENGLISH ONLY.
     
-    Context (BRL):
+    User Profile:
+    - Name: ${userProfile?.name}
+    - Level: ${userProfile?.knowledgeLevel || 'BEGINNER'}
+    - Monthly Income: R$ ${userProfile?.monthlyIncome || 0}
+    - Debt: R$ ${userProfile?.totalDebt || 0}
+    - Assets: R$ ${userProfile?.liquidAssets || 0}
     - Total Net Worth: R$ ${totalNetWorth.toFixed(2)}
-    - CDI: ${(CURRENT_CDI_RATE * 100).toFixed(2)}%
     
-    Investments:
-    ${investmentSummary}
-
-    Recent Txns:
+    Context:
+    - Brazil Market CDI: ${(CURRENT_CDI_RATE * 100).toFixed(2)}%
+    
+    Recent Transactions:
     ${recentTransactions}
 
     Tasks:
     1. Answer questions based on their specific context.
-    2. If they are beginner, explain simple concepts. If advanced, go deep into technicals.
-    3. Always respect Brazilian tax laws (IR, IOF).
+    2. If they are beginner, explain simple concepts.
+    3. Provide actionable advice to help them save more or invest better.
   `;
 
   try {
@@ -77,9 +75,8 @@ export const createFinancialAdvisorChat = (
       });
   } catch (e) {
       console.error("Failed to create chat session", e);
-      // Return a mock object to prevent UI crash
       return {
-          sendMessage: async () => ({ text: "Erro ao conectar com o assistente. Verifique sua conexão ou chave de API." })
+          sendMessage: async () => ({ text: "Error connecting to AI. Please check your API Key in Settings." })
       } as any;
   }
 };
@@ -87,8 +84,8 @@ export const createFinancialAdvisorChat = (
 export const generateMonthlyInsight = async (accounts: Account[], transactions: Transaction[], userProfile?: UserProfile): Promise<string> => {
   const totalBalance = accounts.reduce((sum, acc) => sum + acc.balance, 0);
   const prompt = `
-    Context: User level is ${userProfile?.knowledgeLevel || 'Beginner'}.
-    Based on balance R$ ${totalBalance} and recent activity, give 1 short financial tip in Portuguese.
+    Context: User level is ${userProfile?.knowledgeLevel || 'Beginner'}. Balance: R$ ${totalBalance}.
+    Task: Give 1 short, motivating financial tip in Portuguese based on general financial wisdom. Max 15 words.
   `;
 
   try {
@@ -103,9 +100,6 @@ export const generateMonthlyInsight = async (accounts: Account[], transactions: 
   }
 };
 
-/**
- * Analyzes a specific financial goal (e.g., Buy Car) and suggests a strategy (Cash vs Finance).
- */
 export const analyzeGoalStrategy = async (goal: Goal, userProfile: UserProfile, investments: Investment[]): Promise<string> => {
   let specifics = "";
   if (goal.type === 'RETIREMENT' && goal.retirementDetails) {
@@ -118,25 +112,23 @@ export const analyzeGoalStrategy = async (goal: Goal, userProfile: UserProfile, 
   }
 
   const prompt = `
-    I am ${userProfile.name}, my knowledge level is ${userProfile.knowledgeLevel}.
+    I am ${userProfile.name}, my income is R$ ${userProfile.monthlyIncome}.
     I have a goal: "${goal.title}"
     Target: R$ ${goal.targetAmount}
     Current Saved: R$ ${goal.currentAmount}
     Type: ${goal.type}
-    Deadline: ${goal.deadline || 'Undefined'}
     ${specifics}
 
     My Total Liquid Assets: R$ ${userProfile.liquidAssets}
     My Total Debt: R$ ${userProfile.totalDebt}
-
-    Current Brazil Market: CDI is ${(CURRENT_CDI_RATE * 100).toFixed(2)}%.
+    Brazil Market CDI: ${(CURRENT_CDI_RATE * 100).toFixed(2)}%.
 
     Task:
-    Analyze the best strategy for this goal. 
-    If it's a purchase (e.g., car/house), compare paying cash vs financing and keeping money invested.
-    If it's retirement, calculate if the current pace is enough, suggest asset allocation (e.g., % in IPCA+ bonds vs Stocks) based on the time horizon.
+    Analyze the best strategy for this goal. Language: ENGLISH.
+    If it's retirement, calculate if the current pace is enough considering my income and age. Suggest aggressive vs conservative allocation.
+    If it's a purchase, suggest if I should finance or save.
     
-    Return a concise, markdown formatted strategy advice (max 200 words). Use bullet points.
+    Return a concise, markdown formatted strategy advice (max 200 words).
   `;
 
   try {
@@ -145,19 +137,19 @@ export const analyzeGoalStrategy = async (goal: Goal, userProfile: UserProfile, 
       model: 'gemini-2.5-flash',
       contents: prompt,
     });
-    return response.text || "Não foi possível gerar análise no momento.";
+    return response.text || "Unable to generate analysis.";
   } catch (error) {
-    return "Erro ao conectar com o estrategista financeiro.";
+    return "Error connecting to financial strategist.";
   }
 };
 
 export const getPersonalizedNews = async (investments: Investment[]): Promise<{title: string, summary: string}[]> => {
-    if (investments.length === 0) return [{ title: "Comece a investir", summary: "Adicione ativos para receber notícias personalizadas." }];
+    if (investments.length === 0) return [{ title: "Start Investing", summary: "Add assets to receive personalized market news." }];
     
     const tickers = investments.map(i => i.ticker || i.name).join(', ');
     const prompt = `
-        Generate 3 fictional but realistic financial news headlines and one-sentence summaries relevant to these assets: ${tickers}.
-        Context: Brazil Market, recent trends.
+        Generate 3 realistic financial news headlines relevant to these assets: ${tickers}.
+        Context: Brazil Market. Language: Portuguese.
         Format: JSON Array [{ "title": "...", "summary": "..." }]
     `;
 
@@ -171,5 +163,77 @@ export const getPersonalizedNews = async (investments: Investment[]): Promise<{t
         return JSON.parse(response.text || "[]");
     } catch (e) {
         return [{ title: "Mercado Financeiro", summary: "Acompanhe a volatilidade do Ibovespa." }];
+    }
+};
+
+/**
+ * Analyzes a Bank Statement Image and returns structured transactions.
+ */
+export const analyzeBankStatement = async (imageBase64: string): Promise<StatementItem[]> => {
+    const prompt = `
+        Analyze this bank statement image. Extract all transactions.
+        Return a JSON Array where each object has:
+        - date (YYYY-MM-DD format)
+        - description (string, merchant name)
+        - amount (number, negative for expense, positive for income)
+        - category (Best guess category: Alimentação, Transporte, Moradia, Lazer, Saúde, Renda, Outros)
+
+        Ignore header/footer text. Just transactions.
+    `;
+
+    try {
+        const ai = getAI();
+        const response: GenerateContentResponse = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: {
+                parts: [
+                    { inlineData: { mimeType: 'image/jpeg', data: imageBase64 } },
+                    { text: prompt }
+                ]
+            },
+            config: { responseMimeType: 'application/json' }
+        });
+        return JSON.parse(response.text || "[]");
+    } catch (e) {
+        console.error(e);
+        throw new Error("Failed to analyze statement");
+    }
+};
+
+/**
+ * Suggests budgets based on Income and Goals.
+ */
+export const suggestSmartBudgets = async (userProfile: UserProfile, goals: Goal[]): Promise<Budget[]> => {
+    const mainGoal = goals[0]; // Prioritize main goal
+    const prompt = `
+        User Income: R$ ${userProfile.monthlyIncome}
+        Main Goal: ${mainGoal ? mainGoal.title + ' (' + mainGoal.type + ')' : 'Save Money'}
+        Goal Target: ${mainGoal ? 'R$ ' + mainGoal.targetAmount : 'General Savings'}
+        
+        Task:
+        Create a monthly budget plan (JSON Array).
+        Categories to include: Moradia, Alimentação, Transporte, Lazer, Investimentos (Savings).
+        
+        Logic:
+        - If goal is Aggressive (e.g. Early Retirement), maximize Investimentos.
+        - Ensure total sum <= Income.
+        - Use Brazilian Real cost of living standards.
+        
+        Output JSON Format:
+        [ { "category": "String", "limit": Number } ]
+    `;
+
+    try {
+        const ai = getAI();
+        const response: GenerateContentResponse = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: { responseMimeType: 'application/json' }
+        });
+        const budgets = JSON.parse(response.text || "[]");
+        return budgets.map((b: any, i: number) => ({ id: `bud_ai_${Date.now()}_${i}`, category: b.category, limit: b.limit }));
+    } catch (e) {
+        console.error(e);
+        return [];
     }
 };

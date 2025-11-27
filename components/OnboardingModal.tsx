@@ -28,6 +28,7 @@ const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onComplete })
       const profile: UserProfile = {
           name,
           knowledgeLevel: knowledge,
+          monthlyIncome: 0,
           liquidAssets: liquidAssets ? parseFloat(liquidAssets) : 0,
           totalDebt: totalDebt ? parseFloat(totalDebt) : 0,
           partnerConfig: { isConnected: false, permissions: { shareGoals: false, shareNetWorth: false, shareTransactions: false } }
